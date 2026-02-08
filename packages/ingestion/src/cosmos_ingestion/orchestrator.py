@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from cosmos_core import VisionModel, VectorStore
 from cosmos_ingestion.video_worker import VideoWorker
-from cosmos_ingestion.audio_worker import AudioWorker
 
 if TYPE_CHECKING:
     from cosmos_live.config import LiveKitConfig, VideoWorkerConfig
@@ -25,7 +24,6 @@ class Orchestrator:
         self._vector_store = vector_store
         self._video_worker_config = video_worker_config
         self._video_workers: dict[str, VideoWorker] = {}
-        self._audio_workers: dict[str, AudioWorker] = {}
 
     async def run(self) -> None:
         """Connect to a LiveKit room and subscribe to tracks."""
@@ -44,6 +42,3 @@ class Orchestrator:
                 kwargs["prompt"] = self._video_worker_config.prompt
             worker = VideoWorker(track_id, **kwargs)
             self._video_workers[track_id] = worker
-        elif kind == "audio":
-            worker = AudioWorker(track_id)
-            self._audio_workers[track_id] = worker
