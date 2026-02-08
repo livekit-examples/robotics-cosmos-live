@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from cosmos_live.config import Config
-from cosmos_storage import InMemoryVectorStore, InMemoryGraphStore
+from cosmos_storage import InMemoryGraphStore, MilvusVectorStore
 from cosmos_ingestion.vllm import VLLMVisionModel
 from cosmos_ingestion.orchestrator import Orchestrator
 from cosmos_control.agent import ControlAgent
@@ -16,7 +16,12 @@ async def main() -> None:
     config = Config.from_yaml()
 
     # Shared stores — ingestion writes, control reads
-    vector_store = InMemoryVectorStore()
+    vector_store = MilvusVectorStore(
+        uri=config.milvus.uri,
+        token=config.milvus.token.get_secret_value() if config.milvus.token else None,
+        collection_name=config.milvus.collection_name,
+        embedding_model=config.milvus.embedding_model,
+    )
     graph_store = InMemoryGraphStore()
 
     # Ingestion pipeline
