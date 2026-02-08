@@ -80,6 +80,43 @@ class MilvusVectorStore(VectorStore):
         )
         client.insert(collection_name=self._collection_name, data=[data])
 
+    async def search(
+        self,
+        filter: str = "",
+        top_k: int = 10,
+    ) -> list[Document]:
+        """Filter-based search. No embeddings — like a SQL WHERE clause.
+
+        Fields: ``track_id`` (str), ``kind`` (str), ``timestamp`` (float), ``content`` (str).
+        Results are ordered by timestamp descending (most recent first).
+
+        Examples::
+
+            'track_id == "cam-1"'
+            'timestamp > 1700000000'
+            'track_id == "cam-1" and timestamp > 1700000000'
+            'kind == "analysis"'
+            'track_id in ["cam-1", "cam-2"]'
+        """
+        client = self._ensure_client()
+
+        results = client.query(
+            collection_name=self._collection_name,
+            filter=filter or "id >= 0",
+            output_fields=["content", "track_id", "kind", "timestamp"],
+            limit=top_k,
+        )
+        results.sort(key=lambda r: r.get("timestamp", 0.0), reverse=True)
+        return [
+            Document(
+                content=r.get("content", ""),
+                track_id=r.get("track_id", ""),
+                kind=r.get("kind", ""),
+                timestamp=r.get("timestamp", 0.0),
+            )
+            for r in results
+        ]
+
     async def query(self, text: str, top_k: int = 5) -> list[Document]:
         """Embed query text, search Milvus Lite, and return matching Documents."""
         client = self._ensure_client()

@@ -20,6 +20,11 @@ video_worker:
   target_fps: 10                                # frame capture rate
   prompt: "Describe what is happening in these video frames."
 
+agent:
+  stt: "deepgram/nova-3:multi"
+  llm: "openai/gpt-4.1-mini"
+  tts: "cartesia/sonic-3"
+
 stream:
   rtmp_url: rtmp://a.rtmp.youtube.com/live2
   stream_key: your-stream-key
