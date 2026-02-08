@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import logging
 import time
 
 import cv2
 import numpy as np
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 from cosmos_core import Frame, AnalysisResult, VisionModel
 from cosmos_live.config import VLLMConfig
@@ -50,10 +53,12 @@ class VLLMVisionModel(VisionModel):
         ]
         content.append({"type": "text", "text": prompt})
 
+        t0 = time.perf_counter()
         response = await client.chat.completions.create(
             model=self._config.model,
             messages=[{"role": "user", "content": content}],
         )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
 
         choice = response.choices[0]
         metadata: dict = {}
@@ -65,6 +70,13 @@ class VLLMVisionModel(VisionModel):
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             }
+
+        logger.info(
+            "vLLM analyze frames=%d elapsed=%.0fms tokens=%s",
+            len(frames),
+            elapsed_ms,
+            metadata.get("usage", {}).get("total_tokens", "n/a"),
+        )
 
         return AnalysisResult(
             answer=choice.message.content or "",

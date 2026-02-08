@@ -33,6 +33,7 @@ class StreamConfig(BaseModel):
 class VideoWorkerConfig(BaseModel):
     buffer_size: int = 60
     sample_count: int = 20
+    target_fps: int = 10
     prompt: str = "Describe what is happening in these video frames."
 
 

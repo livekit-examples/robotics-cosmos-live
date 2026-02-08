@@ -26,6 +26,8 @@ def _setup_logging() -> None:
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 
 async def main() -> None:

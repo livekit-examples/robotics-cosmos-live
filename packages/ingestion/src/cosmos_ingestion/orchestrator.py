@@ -19,8 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-TARGET_FPS = 10
-FRAME_INTERVAL = 1.0 / TARGET_FPS
+DEFAULT_TARGET_FPS = 10
 
 
 class Orchestrator:
@@ -37,6 +36,12 @@ class Orchestrator:
         self._vision = vision
         self._vector_store = vector_store
         self._video_worker_config = video_worker_config
+        target_fps = (
+            video_worker_config.target_fps
+            if video_worker_config is not None
+            else DEFAULT_TARGET_FPS
+        )
+        self._frame_interval = 1.0 / target_fps
         self._video_workers: dict[str, VideoWorker] = {}
         # self._audio_workers: dict[str, AudioWorker] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -124,7 +129,7 @@ class Orchestrator:
 
         async for frame_event in video_stream:
             now = time.monotonic()
-            if now - last_frame_time < FRAME_INTERVAL:
+            if now - last_frame_time < self._frame_interval:
                 continue
             last_frame_time = now
 

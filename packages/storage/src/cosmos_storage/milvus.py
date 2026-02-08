@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from pymilvus import MilvusClient
 from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
 
 from cosmos_core.storage import VectorStore
 from cosmos_core.types import Document
@@ -49,7 +53,7 @@ class MilvusVectorStore(VectorStore):
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """Generate normalized embeddings for a list of texts."""
         model = self._ensure_model()
-        embeddings = model.encode(texts, normalize_embeddings=True)
+        embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
         return embeddings.tolist()
 
     async def insert(self, document: Document) -> None:
@@ -63,6 +67,13 @@ class MilvusVectorStore(VectorStore):
             "timestamp": document.timestamp,
             "vector": vectors[0],
         }
+        logger.info(
+            "INSERT track=%s kind=%s ts=%.2f content=%s",
+            document.track_id,
+            document.kind,
+            document.timestamp,
+            document.content[:300],
+        )
         client.insert(collection_name=self._collection_name, data=[data])
 
     async def query(self, text: str, top_k: int = 5) -> list[Document]:
