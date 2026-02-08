@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 
 from pymilvus import (
@@ -53,7 +52,9 @@ class MilvusVectorStore(VectorStore):
                 fields = [
                     FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64),
                     FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535),
-                    FieldSchema(name="metadata", dtype=DataType.VARCHAR, max_length=65535),
+                    FieldSchema(name="track_id", dtype=DataType.VARCHAR, max_length=256),
+                    FieldSchema(name="kind", dtype=DataType.VARCHAR, max_length=64),
+                    FieldSchema(name="timestamp", dtype=DataType.DOUBLE),
                     FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
                 ]
                 schema = CollectionSchema(fields=fields)
@@ -84,7 +85,9 @@ class MilvusVectorStore(VectorStore):
         data = {
             "id": str(uuid.uuid4()),
             "content": document.content,
-            "metadata": json.dumps(document.metadata),
+            "track_id": document.track_id,
+            "kind": document.kind,
+            "timestamp": document.timestamp,
             "embedding": vectors[0],
         }
         client.insert(collection_name=self._collection_name, data=[data])
@@ -97,17 +100,18 @@ class MilvusVectorStore(VectorStore):
             collection_name=self._collection_name,
             data=vectors,
             limit=top_k,
-            output_fields=["content", "metadata"],
+            output_fields=["content", "track_id", "kind", "timestamp"],
         )
         documents: list[Document] = []
         for hits in results:
             for hit in hits:
                 entity = hit.get("entity", {})
-                metadata_str = entity.get("metadata", "{}")
                 documents.append(
                     Document(
                         content=entity.get("content", ""),
-                        metadata=json.loads(metadata_str),
+                        track_id=entity.get("track_id", ""),
+                        kind=entity.get("kind", ""),
+                        timestamp=entity.get("timestamp", 0.0),
                     )
                 )
         return documents

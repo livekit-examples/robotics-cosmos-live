@@ -41,7 +41,12 @@ class VideoWorker:
         if self._vector_store is not None:
             from cosmos_core import Document
 
-            doc = Document(content=result.answer, metadata=result.metadata)
+            doc = Document(
+                content=result.answer,
+                track_id=self.track_id,
+                kind="analysis",
+                timestamp=result.timestamp,
+            )
             await self._vector_store.insert(doc)
 
         if self._graph_store is not None:

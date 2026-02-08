@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -141,7 +140,7 @@ async def test_insert_generates_embedding_and_stores():
     mock_model.encode.return_value = np.array([[0.5, 0.6, 0.7]])
     store._model = mock_model
 
-    doc = Document(content="test content", metadata={"key": "value"})
+    doc = Document(content="test content", track_id="cam-1", kind="analysis", timestamp=1.0)
     await store.insert(doc)
 
     mock_model.encode.assert_called_once_with(["test content"], normalize_embeddings=True)
@@ -149,7 +148,9 @@ async def test_insert_generates_embedding_and_stores():
     call_kwargs = mock_client.insert.call_args
     data = call_kwargs.kwargs["data"][0]
     assert data["content"] == "test content"
-    assert json.loads(data["metadata"]) == {"key": "value"}
+    assert data["track_id"] == "cam-1"
+    assert data["kind"] == "analysis"
+    assert data["timestamp"] == 1.0
     assert data["embedding"] == [0.5, 0.6, 0.7]
     assert len(data["id"]) == 36  # UUID length
 
@@ -167,8 +168,8 @@ async def test_query_returns_documents():
     mock_client.has_collection.return_value = True
     mock_client.search.return_value = [
         [
-            {"entity": {"content": "doc1", "metadata": '{"k": "v1"}'}},
-            {"entity": {"content": "doc2", "metadata": '{"k": "v2"}'}},
+            {"entity": {"content": "doc1", "track_id": "cam-1", "kind": "analysis", "timestamp": 1.0}},
+            {"entity": {"content": "doc2", "track_id": "mic-1", "kind": "transcript", "timestamp": 2.0}},
         ]
     ]
     store._client = mock_client
@@ -183,9 +184,11 @@ async def test_query_returns_documents():
     mock_client.search.assert_called_once()
     assert len(results) == 2
     assert results[0].content == "doc1"
-    assert results[0].metadata == {"k": "v1"}
+    assert results[0].track_id == "cam-1"
+    assert results[0].kind == "analysis"
     assert results[1].content == "doc2"
-    assert results[1].metadata == {"k": "v2"}
+    assert results[1].track_id == "mic-1"
+    assert results[1].kind == "transcript"
 
 
 # ---------------------------------------------------------------------------

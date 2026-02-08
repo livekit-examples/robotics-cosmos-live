@@ -27,7 +27,9 @@ class Document:
     """A storable unit for vector and graph databases."""
 
     content: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    track_id: str = ""
+    kind: str = ""  # e.g. "transcript", "analysis"
+    timestamp: float = 0.0
     embedding: list[float] | None = None
 
 
