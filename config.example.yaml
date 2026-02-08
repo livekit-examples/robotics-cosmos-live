@@ -10,8 +10,7 @@ vllm:
   api_key: null
 
 milvus:
-  uri: http://localhost:19530
-  token: null
+  db_path: cosmos.db                   # default: cosmos.db
   collection_name: cosmos_documents   # default: cosmos_documents
   embedding_model: all-MiniLM-L6-v2   # default: all-MiniLM-L6-v2
 

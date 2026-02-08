@@ -11,3 +11,6 @@ wheels/
 
 # Config with secrets
 config.yaml
+
+# Milvus Lite database files
+*.db

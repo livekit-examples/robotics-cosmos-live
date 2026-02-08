@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cosmos-core",
     "pymilvus>=2.4",
+    "milvus-lite>=2.4",
     "sentence-transformers>=3.0",
 ]
 
