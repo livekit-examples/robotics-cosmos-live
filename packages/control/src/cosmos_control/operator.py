@@ -115,6 +115,11 @@ class FFmpegStreamOperator(StreamOperator):
 
     # --- Public API ---
 
+    @property
+    def available_feeds(self) -> list[str]:
+        """Return participant identities that have at least one subscribed track."""
+        return list(self._available_tracks.keys())
+
     async def start(self) -> None:
         """Create audio FIFO, spawn FFmpeg, connect to LiveKit, start render loop."""
         logger.info("Starting FFmpegStreamOperator")

@@ -46,6 +46,24 @@ class StreamConfig(BaseModel):
     operator: OperatorConfig = OperatorConfig()
 
 
+class AgentConfig(BaseModel):
+    stt: str = "deepgram/nova-3:multi"
+    llm: str = "openai/gpt-4.1-mini"
+    tts: str = "cartesia/sonic-3"
+    instructions: str = (
+        "You are Cosmos, an intelligent live stream director. "
+        "You monitor multiple live video feeds and control a stream output.\n\n"
+        "You can:\n"
+        "- Search feed content to answer questions about what's happening or what happened\n"
+        "- Switch the active feed being streamed\n"
+        "- Set text overlays on the stream output\n"
+        "- List available feeds\n\n"
+        "When asked about feed content, use query for semantic/meaning-based lookups or search for field-based filtering (by feed, time, kind).\n"
+        "When asked to switch feeds, first search for the right feed if not specified, then use switch_feed.\n"
+        "Keep responses concise since you're a voice assistant."
+    )
+
+
 class VideoWorkerConfig(BaseModel):
     buffer_size: int = 60
     sample_count: int = 20
@@ -59,6 +77,7 @@ class Config(BaseModel):
     milvus: MilvusConfig
     stream: StreamConfig | None = None
     video_worker: VideoWorkerConfig = VideoWorkerConfig()
+    agent: AgentConfig = AgentConfig()
 
     @classmethod
     def from_yaml(cls, path: str | Path = "config.yaml") -> Config:

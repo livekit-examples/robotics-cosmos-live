@@ -51,13 +51,6 @@ async def main() -> None:
         video_worker_config=config.video_worker,
     )
 
-    # Create stream operator if configured
-    stream_operator = None
-    if config.stream is not None:
-        from cosmos_control.operator import FFmpegStreamOperator
-
-        stream_operator = FFmpegStreamOperator(config.stream, config.livekit)
-
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
 
@@ -66,30 +59,16 @@ async def main() -> None:
 
     orchestrator_task = asyncio.create_task(orchestrator.run())
 
-    if stream_operator is not None:
-        operator_task = asyncio.create_task(stream_operator.start())
-    else:
-        operator_task = None
-
     logger.info("Ingestion pipeline started — press Ctrl+C to stop")
     await stop
 
     logger.info("Shutting down…")
-
-    if stream_operator is not None:
-        await stream_operator.stop()
 
     orchestrator_task.cancel()
     try:
         await orchestrator_task
     except asyncio.CancelledError:
         pass
-
-    if operator_task is not None:
-        try:
-            await operator_task
-        except Exception:
-            logger.exception("Operator task error during shutdown")
 
     await vision.close()
     vector_store.close()
