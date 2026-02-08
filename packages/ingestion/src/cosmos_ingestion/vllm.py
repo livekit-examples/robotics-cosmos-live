@@ -1,10 +1,79 @@
 from __future__ import annotations
 
+import base64
+import time
+
+import cv2
+import numpy as np
+from openai import AsyncOpenAI
+
 from cosmos_core import Frame, AnalysisResult, VisionModel
+from cosmos_live.config import VLLMConfig
+
+
+def _encode_frame(frame: Frame, quality: int = 85) -> str:
+    """JPEG-encode a numpy frame and return a base64 data URI."""
+    success, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    if not success:
+        raise ValueError("Failed to encode frame as JPEG")
+    b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
 
 
 class VLLMVisionModel(VisionModel):
     """vLLM-backed vision model implementation."""
 
+    def __init__(self, config: VLLMConfig) -> None:
+        self._config = config
+        self._client: AsyncOpenAI | None = None
+
+    def _ensure_client(self) -> AsyncOpenAI:
+        """Lazy-create the AsyncOpenAI client."""
+        if self._client is None:
+            api_key = (
+                self._config.api_key.get_secret_value()
+                if self._config.api_key
+                else "EMPTY"
+            )
+            self._client = AsyncOpenAI(
+                base_url=self._config.base_url + "/v1",
+                api_key=api_key,
+            )
+        return self._client
+
     async def analyze(self, frames: list[Frame], prompt: str) -> AnalysisResult:
-        raise NotImplementedError
+        client = self._ensure_client()
+
+        content: list[dict] = [
+            {"type": "image_url", "image_url": {"url": _encode_frame(frame)}}
+            for frame in frames
+        ]
+        content.append({"type": "text", "text": prompt})
+
+        response = await client.chat.completions.create(
+            model=self._config.model,
+            messages=[{"role": "user", "content": content}],
+        )
+
+        choice = response.choices[0]
+        metadata: dict = {}
+        if response.model:
+            metadata["model"] = response.model
+        if response.usage:
+            metadata["usage"] = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+        return AnalysisResult(
+            answer=choice.message.content or "",
+            metadata=metadata,
+            timestamp=time.time(),
+        )
+
+    async def close(self) -> None:
+        """Release client resources."""
+        if self._client is not None:
+            await self._client.close()
+            self._client = None

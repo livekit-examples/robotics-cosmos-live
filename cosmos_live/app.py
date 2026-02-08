@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from cosmos_live.config import Config
-from cosmos_storage import InMemoryVectorStore
+from cosmos_storage import MilvusVectorStore
 from cosmos_ingestion.vllm import VLLMVisionModel
 from cosmos_ingestion.orchestrator import Orchestrator
 from cosmos_control.agent import ControlAgent
@@ -24,7 +24,7 @@ async def main() -> None:
     )
     
     # Ingestion pipeline
-    vision = VLLMVisionModel()
+    vision = VLLMVisionModel(config=config.vllm)
     orchestrator = Orchestrator(
         config=config.livekit,
         vision=vision,
