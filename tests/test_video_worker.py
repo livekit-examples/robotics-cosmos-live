@@ -94,12 +94,12 @@ class TestVideoWorker:
             vector_store=store,
         )
 
-        worker.push_frame(_frame(0))
-        worker.push_frame(_frame(1))
+        worker.push_frame(_frame(0), timestamp=0.1)
+        worker.push_frame(_frame(1), timestamp=0.2)
         # Buffer not full yet — no task
         assert worker._task is None
 
-        worker.push_frame(_frame(2))
+        worker.push_frame(_frame(2), timestamp=0.3)
         # Buffer is now full — task created
         assert worker._task is not None
         await worker._task
@@ -113,6 +113,7 @@ class TestVideoWorker:
         assert doc.content == "test"
         assert doc.track_id == "t1"
         assert doc.kind == "analysis"
+        assert doc.timestamp == 0.3  # frame timestamp, not result timestamp
 
     @pytest.mark.asyncio
     async def test_buffer_flushed_after_trigger(self):

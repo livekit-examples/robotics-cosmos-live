@@ -133,4 +133,5 @@ class Orchestrator:
             arr = np.frombuffer(rgb_frame.data, dtype=np.uint8).reshape(
                 (rgb_frame.height, rgb_frame.width, 3)
             )
+            
             worker.push_frame(arr, time.time())
