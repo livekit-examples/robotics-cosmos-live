@@ -1,0 +1,22 @@
+livekit:
+  url: wss://your-project.livekit.cloud
+  api_key: your-api-key
+  api_secret: your-api-secret
+
+vllm:
+  base_url: http://localhost:8000
+  model: your-model-name
+  api_key: null
+
+milvus:
+  uri: http://localhost:19530
+  token: null
+
+neo4j:
+  uri: bolt://localhost:7687
+  user: neo4j
+  password: your-password
+
+stream:
+  rtmp_url: rtmp://a.rtmp.youtube.com/live2
+  stream_key: your-stream-key
