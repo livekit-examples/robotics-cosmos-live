@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from livekit.agents import AgentSession, AutoSubscribe, RtcSession
+from livekit.agents import AgentSession, RtcSession
 from livekit.agents.voice import AgentServer
 from livekit.plugins import silero
 

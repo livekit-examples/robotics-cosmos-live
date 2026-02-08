@@ -82,7 +82,7 @@ class MilvusVectorStore(VectorStore):
 
     async def search(
         self,
-        filter: str = "",
+        expr: str = "",
         top_k: int = 10,
     ) -> list[Document]:
         """Filter-based search. No embeddings — like a SQL WHERE clause.
@@ -102,7 +102,7 @@ class MilvusVectorStore(VectorStore):
 
         results = client.query(
             collection_name=self._collection_name,
-            filter=filter or "id >= 0",
+            filter=expr or "id >= 0",
             output_fields=["content", "track_id", "kind", "timestamp"],
             limit=top_k,
         )

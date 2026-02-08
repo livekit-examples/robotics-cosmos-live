@@ -22,7 +22,7 @@ class CosmosAgent(Agent):
         self,
         *,
         vector_store: MilvusVectorStore,
-        operator: FFmpegStreamOperator,
+        operator: FFmpegStreamOperator | None = None,
         instructions: str = "",
     ) -> None:
         super().__init__(instructions=instructions)
@@ -61,7 +61,7 @@ class CosmosAgent(Agent):
     async def search(
         self,
         ctx: RunContext,
-        filter: str = "",
+        expr: str = "",
         top_k: int = 10,
     ) -> str:
         """Filter-based search on document fields — like a SQL WHERE clause. No semantic ranking; results ordered by timestamp descending.
@@ -76,10 +76,10 @@ class CosmosAgent(Agent):
           'track_id in ["cam-1", "cam-2"]'
 
         Args:
-            filter: Milvus filter expression. Empty string returns all documents.
+            expr: Milvus filter expression. Empty string returns all documents.
             top_k: Maximum number of results to return.
         """
-        docs = await self._vector_store.search(filter=filter, top_k=top_k)
+        docs = await self._vector_store.search(expr=expr, top_k=top_k)
         if not docs:
             return "No results found."
         lines: list[str] = []
@@ -101,13 +101,17 @@ class CosmosAgent(Agent):
         Args:
             feed_id: The feed participant identity to switch to.
         """
+        if self._operator is None:
+            return "Stream operator is not configured."
         await self._operator.set_feed(feed_id)
         return f"Switched to feed {feed_id}."
 
     @function_tool
     async def list_feeds(self, ctx: RunContext) -> str:
         """List all available feed participant identities."""
-        feeds = list(self._operator._available_tracks.keys())
+        if self._operator is None:
+            return "Stream operator is not configured."
+        feeds = self._operator.available_feeds
         if not feeds:
             return "No feeds currently available."
         return "Available feeds: " + ", ".join(feeds)
@@ -122,6 +126,8 @@ class CosmosAgent(Agent):
             slot: Overlay slot name — one of 'lower_third', 'title', or 'banner'.
             text: The text to display.
         """
+        if self._operator is None:
+            return "Stream operator is not configured."
         overlay = Overlay(kind="text", data={"text": text})
         await self._operator.set_overlay(slot, overlay)
         return f"Overlay set on slot '{slot}'."
@@ -133,17 +139,23 @@ class CosmosAgent(Agent):
         Args:
             slot: Overlay slot name to clear.
         """
+        if self._operator is None:
+            return "Stream operator is not configured."
         await self._operator.clear_overlay(slot)
         return f"Overlay cleared from slot '{slot}'."
 
     @function_tool
     async def start_stream(self, ctx: RunContext) -> str:
         """Start the stream operator."""
+        if self._operator is None:
+            return "Stream operator is not configured."
         await self._operator.start()
         return "Stream started."
 
     @function_tool
     async def stop_stream(self, ctx: RunContext) -> str:
         """Stop the stream operator."""
+        if self._operator is None:
+            return "Stream operator is not configured."
         await self._operator.stop()
         return "Stream stopped."
