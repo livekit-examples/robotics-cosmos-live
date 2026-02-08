@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-from livekit import api, rtc
+from cosmos_utils import generate_livekit_token
+from livekit import rtc
 
 if TYPE_CHECKING:
     from cosmos_live.config import LiveKitConfig
@@ -20,16 +21,16 @@ class Publisher:
     def __init__(
         self,
         config: LiveKitConfig,
-        room_name: str,
         source: str,
         *,
+        room_name: str | None = None,
         fps: int = 30,
         width: int = 1280,
         height: int = 720,
         identity: str = "publisher",
     ) -> None:
         self._config = config
-        self._room_name = room_name
+        self._room_name = room_name or config.room
         self._source = source
         self._fps = fps
         self._width = width
@@ -37,29 +38,15 @@ class Publisher:
         self._identity = identity
         self._running = False
 
-    def _generate_token(self) -> str:
-        """Create a JWT access token with publish grants for the room."""
-        token = api.AccessToken(
-            self._config.api_key,
-            self._config.api_secret.get_secret_value(),
-        )
-        token.with_identity(self._identity)
-        token.with_grants(
-            api.VideoGrants(
-                room_join=True,
-                room=self._room_name,
-                can_publish=True,
-            )
-        )
-        return token.to_jwt()
-
     async def run(self) -> None:
         """Connect to the room, publish a video track, and start capturing."""
         video_source = rtc.VideoSource(self._width, self._height)
         track = rtc.LocalVideoTrack.create_video_track("camera", video_source)
 
         room = rtc.Room()
-        token = self._generate_token()
+        token = generate_livekit_token(
+            self._config, self._identity, self._room_name
+        )
 
         logger.info(
             "Connecting to %s room=%s as %s",
