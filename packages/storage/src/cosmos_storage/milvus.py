@@ -68,7 +68,11 @@ class MilvusVectorStore(VectorStore):
             "vector": vectors[0],
         }
         logger.info(
-            "INSERT track=%s kind=%s ts=%.2f content=%s",
+            "Inserting document into Milvus:\n"
+            "  participant: %s\n"
+            "  kind:        %s\n"
+            "  timestamp:   %.2f\n"
+            "  content:     %s",
             document.track_id,
             document.kind,
             document.timestamp,

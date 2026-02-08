@@ -59,15 +59,15 @@ class Orchestrator:
             publication: rtc.RemoteTrackPublication,
             participant: rtc.RemoteParticipant,
         ):
-            track_id = track.sid
+            identity = participant.identity
             logger.info(
                 "Track subscribed: %s kind=%s from %s",
-                track_id,
+                track.sid,
                 track.kind,
-                participant.identity,
+                identity,
             )
             if track.kind == rtc.TrackKind.KIND_VIDEO:
-                self._on_video_track(track_id, track)
+                self._on_video_track(identity, track)
             # elif track.kind == rtc.TrackKind.KIND_AUDIO:
             #     self._on_audio_track(track_id, track)
 
@@ -77,16 +77,16 @@ class Orchestrator:
             publication: rtc.RemoteTrackPublication,
             participant: rtc.RemoteParticipant,
         ):
-            track_id = track.sid
+            identity = participant.identity
             logger.info(
                 "Track unsubscribed: %s from %s",
-                track_id,
-                participant.identity,
+                track.sid,
+                identity,
             )
-            task = self._tasks.pop(track_id, None)
+            task = self._tasks.pop(identity, None)
             if task is not None:
                 task.cancel()
-            self._video_workers.pop(track_id, None)
+            self._video_workers.pop(identity, None)
 
         logger.info("Connecting to %s room=%s", self._config.url, self._config.room)
         await room.connect(self._config.url, token)
@@ -105,7 +105,7 @@ class Orchestrator:
             await room.disconnect()
             logger.info("Disconnected")
 
-    def _on_video_track(self, track_id: str, track: rtc.Track) -> None:
+    def _on_video_track(self, identity: str, track: rtc.Track) -> None:
         kwargs: dict = dict(
             vision=self._vision,
             vector_store=self._vector_store,
@@ -114,9 +114,9 @@ class Orchestrator:
             kwargs["buffer_size"] = self._video_worker_config.buffer_size
             kwargs["sample_count"] = self._video_worker_config.sample_count
             kwargs["prompt"] = self._video_worker_config.prompt
-        worker = VideoWorker(track_id, **kwargs)
-        self._video_workers[track_id] = worker
-        self._tasks[track_id] = asyncio.create_task(
+        worker = VideoWorker(identity, **kwargs)
+        self._video_workers[identity] = worker
+        self._tasks[identity] = asyncio.create_task(
             self._consume_video(track, worker)
         )
 
