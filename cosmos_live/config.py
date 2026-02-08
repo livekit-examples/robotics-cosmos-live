@@ -26,12 +26,6 @@ class MilvusConfig(BaseModel):
     embedding_model: str = "all-MiniLM-L6-v2"
 
 
-class Neo4jConfig(BaseModel):
-    uri: str
-    user: str
-    password: SecretStr
-
-
 class StreamConfig(BaseModel):
     rtmp_url: str
     stream_key: SecretStr
@@ -41,7 +35,6 @@ class Config(BaseModel):
     livekit: LiveKitConfig
     vllm: VLLMConfig
     milvus: MilvusConfig
-    neo4j: Neo4jConfig
     stream: StreamConfig | None = None
 
     @classmethod

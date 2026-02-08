@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from cosmos_live.config import Config
-from cosmos_storage import InMemoryGraphStore, MilvusVectorStore
+from cosmos_storage import InMemoryVectorStore
 from cosmos_ingestion.vllm import VLLMVisionModel
 from cosmos_ingestion.orchestrator import Orchestrator
 from cosmos_control.agent import ControlAgent
@@ -22,22 +22,19 @@ async def main() -> None:
         collection_name=config.milvus.collection_name,
         embedding_model=config.milvus.embedding_model,
     )
-    graph_store = InMemoryGraphStore()
-
+    
     # Ingestion pipeline
     vision = VLLMVisionModel()
     orchestrator = Orchestrator(
         config=config.livekit,
         vision=vision,
         vector_store=vector_store,
-        graph_store=graph_store,
     )
 
     # Control pipeline
     stream_operator = FFmpegStreamOperator()
     agent = ControlAgent(
         vector_store=vector_store,
-        graph_store=graph_store,
         stream_operator=stream_operator,
     )
 

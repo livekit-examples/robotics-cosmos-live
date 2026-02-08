@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cosmos_core import VectorStore, GraphStore, StreamOperator
+from cosmos_core import VectorStore, StreamOperator
 
 
 class ControlAgent:
@@ -9,11 +9,9 @@ class ControlAgent:
     def __init__(
         self,
         vector_store: VectorStore,
-        graph_store: GraphStore,
         stream_operator: StreamOperator,
     ) -> None:
         self._vector_store = vector_store
-        self._graph_store = graph_store
         self._stream_operator = stream_operator
 
     async def handle(self, user_prompt: str) -> str:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cosmos_core import Frame, FrameBuffer, VisionModel, VectorStore, GraphStore
+from cosmos_core import Frame, FrameBuffer, VisionModel, VectorStore
 
 
 class VideoWorker:
@@ -12,13 +12,11 @@ class VideoWorker:
         buffer: FrameBuffer | None = None,
         vision: VisionModel | None = None,
         vector_store: VectorStore | None = None,
-        graph_store: GraphStore | None = None,
     ) -> None:
         self.track_id = track_id
         self._buffer = buffer
         self._vision = vision
         self._vector_store = vector_store
-        self._graph_store = graph_store
 
     def push_frame(self, frame: Frame) -> None:
         """Push a single frame into the buffer."""
@@ -48,7 +46,3 @@ class VideoWorker:
                 timestamp=result.timestamp,
             )
             await self._vector_store.insert(doc)
-
-        if self._graph_store is not None:
-            node = {"content": result.answer, **result.metadata}
-            await self._graph_store.insert(node)
