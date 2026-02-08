@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-import uuid
-
-from pymilvus import (
-    CollectionSchema,
-    DataType,
-    FieldSchema,
-    MilvusClient,
-)
+from pymilvus import MilvusClient
 from sentence_transformers import SentenceTransformer
 
 from cosmos_core.storage import VectorStore
@@ -15,17 +8,18 @@ from cosmos_core.types import Document
 
 
 class MilvusVectorStore(VectorStore):
-    """Milvus-backed vector store with built-in embedding generation."""
+    """Milvus Lite vector store with built-in embedding generation.
+
+    Uses a local ``.db`` file via Milvus Lite — no server required.
+    """
 
     def __init__(
         self,
-        uri: str,
-        token: str | None = None,
+        db_path: str = "cosmos.db",
         collection_name: str = "cosmos_documents",
         embedding_model: str = "all-MiniLM-L6-v2",
     ) -> None:
-        self._uri = uri
-        self._token = token
+        self._db_path = db_path
         self._collection_name = collection_name
         self._embedding_model_name = embedding_model
         self._model: SentenceTransformer | None = None
@@ -40,35 +34,15 @@ class MilvusVectorStore(VectorStore):
     def _ensure_client(self) -> MilvusClient:
         """Lazy-create the MilvusClient and auto-create collection if missing."""
         if self._client is None:
-            connect_kwargs: dict = {"uri": self._uri}
-            if self._token:
-                connect_kwargs["token"] = self._token
-            self._client = MilvusClient(**connect_kwargs)
+            self._client = MilvusClient(self._db_path)
 
             if not self._client.has_collection(self._collection_name):
                 model = self._ensure_model()
                 dim = model.get_sentence_embedding_dimension()
-
-                fields = [
-                    FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64),
-                    FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535),
-                    FieldSchema(name="track_id", dtype=DataType.VARCHAR, max_length=256),
-                    FieldSchema(name="kind", dtype=DataType.VARCHAR, max_length=64),
-                    FieldSchema(name="timestamp", dtype=DataType.DOUBLE),
-                    FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
-                ]
-                schema = CollectionSchema(fields=fields)
-                index_params = self._client.prepare_index_params()
-                index_params.add_index(
-                    field_name="embedding",
-                    index_type="IVF_FLAT",
-                    metric_type="COSINE",
-                    params={"nlist": 128},
-                )
                 self._client.create_collection(
                     collection_name=self._collection_name,
-                    schema=schema,
-                    index_params=index_params,
+                    dimension=dim,
+                    auto_id=True,
                 )
         return self._client
 
@@ -79,21 +53,20 @@ class MilvusVectorStore(VectorStore):
         return embeddings.tolist()
 
     async def insert(self, document: Document) -> None:
-        """Embed the document content and store in Milvus."""
+        """Embed the document content and store in Milvus Lite."""
         client = self._ensure_client()
         vectors = self._embed([document.content])
         data = {
-            "id": str(uuid.uuid4()),
             "content": document.content,
             "track_id": document.track_id,
             "kind": document.kind,
             "timestamp": document.timestamp,
-            "embedding": vectors[0],
+            "vector": vectors[0],
         }
         client.insert(collection_name=self._collection_name, data=[data])
 
     async def query(self, text: str, top_k: int = 5) -> list[Document]:
-        """Embed query text, search Milvus, and return matching Documents."""
+        """Embed query text, search Milvus Lite, and return matching Documents."""
         client = self._ensure_client()
         vectors = self._embed([text])
         results = client.search(

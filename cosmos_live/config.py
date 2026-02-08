@@ -20,8 +20,7 @@ class VLLMConfig(BaseModel):
 
 
 class MilvusConfig(BaseModel):
-    uri: str
-    token: SecretStr | None = None
+    db_path: str = "cosmos.db"
     collection_name: str = "cosmos_documents"
     embedding_model: str = "all-MiniLM-L6-v2"
 

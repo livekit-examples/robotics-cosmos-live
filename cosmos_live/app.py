@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from cosmos_live.config import Config
-from cosmos_storage import InMemoryVectorStore
+from cosmos_storage import MilvusVectorStore
 from cosmos_ingestion.vllm import VLLMVisionModel
 from cosmos_ingestion.orchestrator import Orchestrator
 from cosmos_control.agent import ControlAgent
@@ -17,8 +17,7 @@ async def main() -> None:
 
     # Shared stores — ingestion writes, control reads
     vector_store = MilvusVectorStore(
-        uri=config.milvus.uri,
-        token=config.milvus.token.get_secret_value() if config.milvus.token else None,
+        db_path=config.milvus.db_path,
         collection_name=config.milvus.collection_name,
         embedding_model=config.milvus.embedding_model,
     )
