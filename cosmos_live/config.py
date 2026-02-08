@@ -30,11 +30,18 @@ class StreamConfig(BaseModel):
     stream_key: SecretStr
 
 
+class VideoWorkerConfig(BaseModel):
+    buffer_size: int = 60
+    sample_count: int = 20
+    prompt: str = "Describe what is happening in these video frames."
+
+
 class Config(BaseModel):
     livekit: LiveKitConfig
     vllm: VLLMConfig
     milvus: MilvusConfig
     stream: StreamConfig | None = None
+    video_worker: VideoWorkerConfig = VideoWorkerConfig()
 
     @classmethod
     def from_yaml(cls, path: str | Path = "config.yaml") -> Config:
