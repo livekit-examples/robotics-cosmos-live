@@ -25,17 +25,17 @@ class VideoWorker:
         self._vector_store = vector_store
         self._task: asyncio.Task[None] | None = None
 
-    def push_frame(self, frame: Frame) -> None:
+    def push_frame(self, frame: Frame, timestamp: float = 0.0) -> None:
         """Push a single frame into the buffer; auto-processes when full."""
         self._buffer.push(frame)
         if self._buffer.is_full:
             frames = self._buffer.sample(self._sample_count)
             self._buffer.flush()
             self._task = asyncio.get_running_loop().create_task(
-                self._process_chunk(frames)
+                self._process_chunk(frames, timestamp)
             )
 
-    async def _process_chunk(self, frames: list[Frame]) -> None:
+    async def _process_chunk(self, frames: list[Frame], timestamp: float) -> None:
         if self._vision is None:
             return
 
@@ -46,7 +46,7 @@ class VideoWorker:
                 content=result.answer,
                 track_id=self.track_id,
                 kind="analysis",
-                timestamp=result.timestamp,
+                timestamp=timestamp,
             )
             await self._vector_store.insert(doc)
 
