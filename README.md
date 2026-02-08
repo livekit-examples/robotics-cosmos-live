@@ -32,14 +32,14 @@ Clients ──► LiveKit ──► Orchestrator                  User Prompt
                ┌────────────┼──────────┐                   ▼
                ▼            ▼          ▼              ControlAgent
          VideoWorker   VideoWorker  AudioWorker      /           \
-               │            │          │        VectorStore   GraphStore
-          FrameBuffer  FrameBuffer    STT            \           /
-               │            │          │              ▼         ▼
+               │            │          │           VectorStore
+          FrameBuffer  FrameBuffer    STT               │
+               │            │          │                ▼
           VisionModel  VisionModel     │          StreamOperator
                │            │          │              │
                └─────┬──────┘─────────┘              ▼
                      ▼                          Live Output
-              VectorStore + GraphStore        (YouTube, RTMP)
+                VectorStore               (YouTube, RTMP)
 ```
 
 Ingestion writes to the stores, control reads from them. The `ControlAgent` can also drive the `StreamOperator` to switch feeds, apply overlays, etc.
@@ -57,7 +57,7 @@ packages/
 │       ├── types.py            Frame, AudioSegment, Document, etc.
 │       ├── buffer.py           FrameBuffer ABC
 │       ├── vision.py           VisionModel ABC
-│       ├── storage.py          VectorStore / GraphStore ABCs
+│       ├── storage.py          VectorStore ABC
 │       ├── transcription.py    Transcriber ABC
 │       └── streaming.py        StreamOperator ABC
 │

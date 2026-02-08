@@ -13,11 +13,6 @@ milvus:
   uri: http://localhost:19530
   token: null
 
-neo4j:
-  uri: bolt://localhost:7687
-  user: neo4j
-  password: your-password
-
 stream:
   rtmp_url: rtmp://a.rtmp.youtube.com/live2
   stream_key: your-stream-key
