@@ -10,6 +10,7 @@ class LiveKitConfig(BaseModel):
     url: str
     api_key: str
     api_secret: SecretStr
+    room: str
 
 
 class VLLMConfig(BaseModel):

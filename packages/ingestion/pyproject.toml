@@ -5,6 +5,10 @@ description = "Orchestrator and workers for ingesting live video and audio"
 requires-python = ">=3.12"
 dependencies = [
     "cosmos-core",
+    "cosmos-utils",
+    "livekit>=1.0.0",
+    "livekit-api>=1.0.0",
+    "opencv-python-headless>=4.10",
 ]
 
 [build-system]
@@ -16,3 +20,4 @@ packages = ["src/cosmos_ingestion"]
 
 [tool.uv.sources]
 cosmos-core = { workspace = true }
+cosmos-utils = { workspace = true }

@@ -9,6 +9,7 @@ dependencies = [
     "cosmos-storage",
     "cosmos-ingestion",
     "cosmos-control",
+    "cosmos-utils",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
 ]
@@ -21,3 +22,14 @@ cosmos-core = { workspace = true }
 cosmos-storage = { workspace = true }
 cosmos-ingestion = { workspace = true }
 cosmos-control = { workspace = true }
+cosmos-utils = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1",
+]
