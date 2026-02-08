@@ -25,9 +25,25 @@ class MilvusConfig(BaseModel):
     embedding_model: str = "all-MiniLM-L6-v2"
 
 
+class OperatorConfig(BaseModel):
+    width: int = 1920
+    height: int = 1080
+    fps: int = 30
+    font_path: str = ""
+    font_size: int = 36
+    video_bitrate: str = "4500k"
+    audio_bitrate: str = "128k"
+    audio_sample_rate: int = 44100
+    audio_channels: int = 2
+    gop_size: int = 60
+    preset: str = "veryfast"
+    placeholder_color: tuple[int, int, int] = (30, 30, 30)
+
+
 class StreamConfig(BaseModel):
     rtmp_url: str
     stream_key: SecretStr
+    operator: OperatorConfig = OperatorConfig()
 
 
 class VideoWorkerConfig(BaseModel):

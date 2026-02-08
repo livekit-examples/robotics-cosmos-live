@@ -10,11 +10,15 @@ class StreamOperator(ABC):
 
     @abstractmethod
     async def set_feed(self, feed_id: str) -> None:
-        """Switch the active video feed to *feed_id*."""
+        """Switch the active video/audio feed by participant identity or track ID."""
 
     @abstractmethod
-    async def set_overlay(self, overlay: Overlay) -> None:
-        """Apply an overlay to the live output."""
+    async def set_overlay(self, slot: str, overlay: Overlay) -> None:
+        """Set a named overlay slot (e.g. 'lower_third', 'title', 'banner')."""
+
+    @abstractmethod
+    async def clear_overlay(self, slot: str) -> None:
+        """Remove the overlay from a named slot."""
 
     @abstractmethod
     async def start(self) -> None:
