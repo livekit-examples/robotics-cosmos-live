@@ -32,27 +32,34 @@ def _setup_logging() -> None:
     logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 
-server = AgentServer()
+_setup_logging()
+
+config = Config.from_yaml()
+logger.info("Loaded config for room=%s", config.livekit.room)
+
+vector_store = MilvusVectorStore(
+    db_path=config.milvus.db_path,
+    collection_name=config.milvus.collection_name,
+    embedding_model=config.milvus.embedding_model,
+)
+
+operator: FFmpegStreamOperator | None = None
+if config.stream is not None:
+    operator = FFmpegStreamOperator(config.stream, config.livekit)
+
+vad = silero.VAD.load()
+
+server = AgentServer(
+    ws_url=config.livekit.url,
+    api_key=config.livekit.api_key,
+    api_secret=config.livekit.api_secret.get_secret_value(),
+)
 
 
 @server.rtc_session()
 async def entrypoint(ctx: RtcSession) -> None:
-    _setup_logging()
-
-    config = Config.from_yaml()
-    logger.info("Loaded config for room=%s", config.livekit.room)
-
-    vector_store = MilvusVectorStore(
-        db_path=config.milvus.db_path,
-        collection_name=config.milvus.collection_name,
-        embedding_model=config.milvus.embedding_model,
-    )
-
-    operator: FFmpegStreamOperator | None = None
-    if config.stream is not None:
-        operator = FFmpegStreamOperator(config.stream, config.livekit)
+    if operator is not None:
         await operator.start()
-        logger.info("Stream operator started")
 
     agent = CosmosAgent(
         vector_store=vector_store,
@@ -64,7 +71,7 @@ async def entrypoint(ctx: RtcSession) -> None:
         stt=config.agent.stt,
         llm=config.agent.llm,
         tts=config.agent.tts,
-        vad=silero.VAD.load(),
+        vad=vad,
     )
 
     await session.start(

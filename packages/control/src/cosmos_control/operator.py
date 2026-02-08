@@ -121,7 +121,12 @@ class FFmpegStreamOperator(StreamOperator):
         return list(self._available_tracks.keys())
 
     async def start(self) -> None:
-        """Create audio FIFO, spawn FFmpeg, connect to LiveKit, start render loop."""
+        """Create audio FIFO, spawn FFmpeg, connect to LiveKit, start render loop.
+
+        Safe to call multiple times — subsequent calls are no-ops.
+        """
+        if self._ffmpeg_proc is not None:
+            return
         logger.info("Starting FFmpegStreamOperator")
 
         # Create audio FIFO
