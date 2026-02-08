@@ -15,9 +15,14 @@ from cosmos_control.operator import FFmpegStreamOperator
 async def main() -> None:
     config = Config.from_yaml()
 
-    # Shared store — ingestion writes, control reads
-    vector_store = InMemoryVectorStore()
-
+    # Shared stores — ingestion writes, control reads
+    vector_store = MilvusVectorStore(
+        uri=config.milvus.uri,
+        token=config.milvus.token.get_secret_value() if config.milvus.token else None,
+        collection_name=config.milvus.collection_name,
+        embedding_model=config.milvus.embedding_model,
+    )
+    
     # Ingestion pipeline
     vision = VLLMVisionModel()
     orchestrator = Orchestrator(

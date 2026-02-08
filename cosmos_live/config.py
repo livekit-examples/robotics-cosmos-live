@@ -22,6 +22,8 @@ class VLLMConfig(BaseModel):
 class MilvusConfig(BaseModel):
     uri: str
     token: SecretStr | None = None
+    collection_name: str = "cosmos_documents"
+    embedding_model: str = "all-MiniLM-L6-v2"
 
 
 class StreamConfig(BaseModel):
