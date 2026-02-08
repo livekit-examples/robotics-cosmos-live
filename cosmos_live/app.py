@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from cosmos_live.config import Config
-from cosmos_storage import InMemoryVectorStore, InMemoryGraphStore
+from cosmos_storage import InMemoryVectorStore
 from cosmos_ingestion.vllm import VLLMVisionModel
 from cosmos_ingestion.orchestrator import Orchestrator
 from cosmos_control.agent import ControlAgent
@@ -15,9 +15,8 @@ from cosmos_control.operator import FFmpegStreamOperator
 async def main() -> None:
     config = Config.from_yaml()
 
-    # Shared stores — ingestion writes, control reads
+    # Shared store — ingestion writes, control reads
     vector_store = InMemoryVectorStore()
-    graph_store = InMemoryGraphStore()
 
     # Ingestion pipeline
     vision = VLLMVisionModel()
@@ -25,14 +24,12 @@ async def main() -> None:
         config=config.livekit,
         vision=vision,
         vector_store=vector_store,
-        graph_store=graph_store,
     )
 
     # Control pipeline
     stream_operator = FFmpegStreamOperator()
     agent = ControlAgent(
         vector_store=vector_store,
-        graph_store=graph_store,
         stream_operator=stream_operator,
     )
 

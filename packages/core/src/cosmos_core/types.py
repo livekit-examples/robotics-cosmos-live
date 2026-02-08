@@ -24,7 +24,7 @@ class AnalysisResult:
 
 @dataclass
 class Document:
-    """A storable unit for vector and graph databases."""
+    """A storable unit for the vector database."""
 
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)

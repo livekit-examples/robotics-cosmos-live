@@ -1,3 +1,3 @@
-from cosmos_storage.memory import InMemoryVectorStore, InMemoryGraphStore
+from cosmos_storage.memory import InMemoryVectorStore
 
-__all__ = ["InMemoryVectorStore", "InMemoryGraphStore"]
+__all__ = ["InMemoryVectorStore"]

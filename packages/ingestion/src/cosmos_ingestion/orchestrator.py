@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cosmos_core import VisionModel, VectorStore, GraphStore
+from cosmos_core import VisionModel, VectorStore
 from cosmos_ingestion.video_worker import VideoWorker
 from cosmos_ingestion.audio_worker import AudioWorker
 
@@ -18,12 +18,10 @@ class Orchestrator:
         config: LiveKitConfig,
         vision: VisionModel,
         vector_store: VectorStore,
-        graph_store: GraphStore,
     ) -> None:
         self._config = config
         self._vision = vision
         self._vector_store = vector_store
-        self._graph_store = graph_store
         self._video_workers: dict[str, VideoWorker] = {}
         self._audio_workers: dict[str, AudioWorker] = {}
 
@@ -38,7 +36,6 @@ class Orchestrator:
                 track_id,
                 vision=self._vision,
                 vector_store=self._vector_store,
-                graph_store=self._graph_store,
             )
             self._video_workers[track_id] = worker
         elif kind == "audio":
