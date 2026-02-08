@@ -14,6 +14,11 @@ milvus:
   collection_name: cosmos_documents   # default: cosmos_documents
   embedding_model: all-MiniLM-L6-v2   # default: all-MiniLM-L6-v2
 
+video_worker:
+  buffer_size: 60                               # frames before processing
+  sample_count: 20                              # frames to sample from buffer
+  prompt: "Describe what is happening in these video frames."
+
 stream:
   rtmp_url: rtmp://a.rtmp.youtube.com/live2
   stream_key: your-stream-key

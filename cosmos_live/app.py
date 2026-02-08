@@ -28,6 +28,7 @@ async def main() -> None:
         config=config.livekit,
         vision=vision,
         vector_store=vector_store,
+        video_worker_config=config.video_worker,
     )
 
     # Control pipeline
