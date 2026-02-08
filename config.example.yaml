@@ -23,3 +23,16 @@ video_worker:
 stream:
   rtmp_url: rtmp://a.rtmp.youtube.com/live2
   stream_key: your-stream-key
+  operator:
+    width: 1920
+    height: 1080
+    fps: 30
+    font_path: ""                   # empty = use Pillow default
+    font_size: 36
+    video_bitrate: "4500k"
+    audio_bitrate: "128k"
+    audio_sample_rate: 44100
+    audio_channels: 2
+    gop_size: 60
+    preset: veryfast
+    placeholder_color: [30, 30, 30]
