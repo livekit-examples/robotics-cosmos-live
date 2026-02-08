@@ -2,6 +2,7 @@ livekit:
   url: wss://your-project.livekit.cloud
   api_key: your-api-key
   api_secret: your-api-secret
+  room: cosmos
 
 vllm:
   base_url: http://localhost:8000
