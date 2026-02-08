@@ -23,7 +23,7 @@ async def main() -> None:
     )
     
     # Ingestion pipeline
-    vision = VLLMVisionModel()
+    vision = VLLMVisionModel(config=config.vllm)
     orchestrator = Orchestrator(
         config=config.livekit,
         vision=vision,
