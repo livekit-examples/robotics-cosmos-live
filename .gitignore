@@ -5,9 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+.claude/
+.pytest_cache/
 
 # Virtual environments
-.venv
+.venv/
 
 # Config with secrets
 config.yaml
