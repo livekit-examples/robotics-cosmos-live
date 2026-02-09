@@ -46,7 +46,7 @@ Real-time surveillance analysis powered by semantic search over continuous video
 
 ## Architecture
 
-The system runs two separate processes that share a Milvus vector store:
+The system runs two separate processes that share a Qdrant vector store:
 
 - **Ingestion** (`ingestion_app.py`) — subscribes to camera feeds, runs vision analysis, writes text chunks to the store.
 - **Retrieval** (`retrieval_app.py`) — voice agent that reads from the store, answers questions, and controls the live stream output.
@@ -102,7 +102,7 @@ The retrieval side is a [LiveKit Agents](https://docs.livekit.io/agents/) voice 
    | Tool                               | What it does                                                             |
    | ---------------------------------- | ------------------------------------------------------------------------ |
    | `query(text, top_k)`               | Semantic search — finds documents by meaning (e.g., "someone cooking")   |
-   | `search(expr, top_k)`              | Field-based filter — Milvus WHERE clause (e.g., `'track_id == "cam-1"'`) |
+   | `search(expr, top_k)`              | Field-based filter on document metadata (e.g., by track_id, kind, time)  |
    | `switch_feed(feed_id)`             | Switch the active stream to a different camera                           |
    | `list_feeds()`                     | List all available camera participant identities                         |
    | `set_overlay(slot, text)`          | Place a text overlay on the stream (`lower_third`, `title`, `banner`)    |
@@ -114,30 +114,28 @@ The retrieval side is a [LiveKit Agents](https://docs.livekit.io/agents/) voice 
 
 ### Document schema
 
-Every chunk stored in Milvus follows the `Document` schema:
+Every chunk stored in Qdrant follows the `Document` schema:
 
 ```python
 @dataclass
 class Document:
     content: str                          # text payload (vision description or transcript)
     track_id: str = ""                    # source camera (e.g. "cam-1")
-    kind: str = ""                        # "transcript" or "analysis"
+    kind: str = ""                        # "video" or "audio"
     timestamp: float = 0.0                # capture time (epoch seconds)
     embedding: list[float] | None = None  # 384-dim vector, populated at insert time
 ```
 
-Stored in Milvus with the following schema:
+Stored in Qdrant as points with the following payload fields:
 
-| Field       | Type           | Description                                     |
-| ----------- | -------------- | ----------------------------------------------- |
-| `id`        | VARCHAR(64)    | Auto-generated UUID v4, primary key             |
-| `content`   | VARCHAR(65535) | Text content from the document                  |
-| `track_id`  | VARCHAR(256)   | Source track identifier (e.g. `"cam-1"`)        |
-| `kind`      | VARCHAR(64)    | Chunk type: `"transcript"`, `"analysis"`        |
-| `timestamp` | DOUBLE         | Capture time in epoch seconds                   |
-| `embedding` | FLOAT_VECTOR   | 384-dim normalized embedding (all-MiniLM-L6-v2) |
+| Field       | Type   | Description                                     |
+| ----------- | ------ | ----------------------------------------------- |
+| `content`   | string | Text content from the document                  |
+| `track_id`  | string | Source track identifier (e.g. `"cam-1"`)        |
+| `kind`      | string | Chunk type: `"video"`, `"audio"`                |
+| `timestamp` | float  | Capture time in epoch seconds                   |
 
-Index: `IVF_FLAT` with `COSINE` metric, `nlist=128`.
+Vectors are 384-dim normalized embeddings (`all-MiniLM-L6-v2`) with `COSINE` distance. A payload index on `timestamp` enables efficient time-ordered queries.
 
 ## Project Structure
 
@@ -161,7 +159,8 @@ packages/
 ├── storage/                Store implementations
 │   └── cosmos_storage/
 │       ├── memory.py           In-memory stores (dev)
-│       └── milvus.py           Milvus vector store (query + search)
+│       ├── milvus.py           Milvus vector store (query + search)
+│       └── qdrant.py           Qdrant vector store (query + search)
 │
 ├── ingestion/              Ingestion pipeline
 │   └── cosmos_ingestion/
@@ -199,6 +198,7 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management. Al
 | `opencv-python-headless` >= 4.10 | ingestion          | Video frame encoding (JPEG for base64 payloads)                             |
 | `pymilvus` >= 2.4                | storage            | Milvus vector database client                                               |
 | `milvus-lite` >= 2.4             | storage            | Serverless embedded Milvus (runs locally, no server needed)                 |
+| `qdrant-client` >= 1.12          | storage            | Qdrant vector database client                                               |
 | `sentence-transformers` >= 3.0   | storage            | Text embedding model (`all-MiniLM-L6-v2`, 384-dim vectors)                  |
 | `opencv-python` >= 4.10          | control            | Frame display (`imshow`), resize, and text overlay rendering                |
 | `numpy` >= 2.0                   | core, control      | Numerical computing, frame data representation                              |
@@ -213,6 +213,7 @@ Dev dependencies: `pytest` >= 8, `pytest-asyncio` >= 1.
 | ---------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **FFmpeg** | Yes (for streaming) | Encodes and muxes the composited video+audio stream and pushes it to an RTMP endpoint (e.g., YouTube Live). Must be available on `$PATH`. |
 | **uv**     | Yes                 | Python package manager used to install dependencies and run the project. Install from [docs.astral.sh/uv](https://docs.astral.sh/uv/).    |
+| **Docker** | Yes (for Qdrant)    | Used to run the Qdrant vector database server. Install from [docker.com](https://www.docker.com/).                                         |
 
 ### External Services
 
@@ -231,6 +232,16 @@ vllm serve nvidia/Cosmos-Reason2-2B
 ```
 
 and set `vllm.base_url` in your `config.yaml` to the address of your vLLM server (e.g., `http://localhost:8000`).
+
+#### Qdrant (Vector Database)
+
+The system stores and searches document embeddings using [Qdrant](https://qdrant.tech/). Run Qdrant locally with Docker:
+
+```bash
+docker run -d --name qdrant -p 6333:6333 -p 6334:6334 -v qdrant_data:/qdrant/storage qdrant/qdrant
+```
+
+This starts Qdrant on `http://localhost:6333` (REST API) and `6334` (gRPC). The `-v qdrant_data` flag persists data across container restarts. Set `qdrant.url` in `config.yaml` if using a different host or port.
 
 #### LLM, STT, TTS (Voice Agent)
 
@@ -270,7 +281,14 @@ The stream operator pushes the composited output to an RTMP URL. By default this
 
    Edit `config.yaml` with your LiveKit credentials, vLLM endpoint, and stream key.
 
-4. Make sure FFmpeg is installed:
+4. Start Qdrant via Docker:
+
+   ```bash
+   docker run -d --name qdrant -p 6333:6333 -p 6334:6334 \
+     -v qdrant_data:/qdrant/storage qdrant/qdrant
+   ```
+
+5. Make sure FFmpeg is installed:
 
    ```bash
    # macOS
@@ -280,13 +298,13 @@ The stream operator pushes the composited output to an RTMP URL. By default this
    sudo apt install ffmpeg
    ```
 
-5. Run the ingestion pipeline (subscribes to camera feeds, runs vision analysis, stores chunks):
+6. Run the ingestion pipeline (subscribes to camera feeds, runs vision analysis, stores chunks):
 
    ```bash
    uv run python -m cosmos_live.ingestion_app
    ```
 
-6. Run the voice agent (connects to the LiveKit room, answers questions, controls the stream):
+7. Run the voice agent (connects to the LiveKit room, answers questions, controls the stream):
 
    ```bash
    uv run python -m cosmos_live.retrieval_app console
@@ -300,7 +318,7 @@ See `config.example.yaml` for all available options. Key sections:
 
 - **`livekit`** -- LiveKit server URL, API key, API secret, and room name.
 - **`vllm`** -- vLLM server base URL, model name (`nvidia/Cosmos-Reason2-2B`), and optional API key.
-- **`milvus`** -- Local DB path, collection name, and embedding model.
+- **`qdrant`** -- Qdrant server URL, collection name, and embedding model.
 - **`video_worker`** -- Frame buffer size, sample count, target FPS, and the vision analysis prompt.
 - **`agent`** -- Voice agent STT, LLM, and TTS model identifiers, plus the system instructions.
 - **`stream`** -- RTMP URL, stream key, and operator settings (resolution, bitrate, encoding preset, etc.).

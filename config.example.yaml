@@ -9,8 +9,8 @@ vllm:
   model: your-model-name
   api_key: null
 
-milvus:
-  db_path: cosmos.db                   # default: cosmos.db
+qdrant:
+  url: http://localhost:6333           # default: http://localhost:6333
   collection_name: cosmos_documents   # default: cosmos_documents
   embedding_model: all-MiniLM-L6-v2   # default: all-MiniLM-L6-v2
 

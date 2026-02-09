@@ -12,18 +12,19 @@ from cosmos_core.types import Document
 
 
 class MilvusVectorStore(VectorStore):
-    """Milvus Lite vector store with built-in embedding generation.
+    """Milvus vector store with built-in embedding generation.
 
-    Uses a local ``.db`` file via Milvus Lite — no server required.
+    Accepts a URI — either a local ``.db`` file path for Milvus Lite
+    or a remote server URI (e.g. ``http://localhost:19530``).
     """
 
     def __init__(
         self,
-        db_path: str = "cosmos.db",
+        uri: str = "cosmos.db",
         collection_name: str = "cosmos_documents",
         embedding_model: str = "all-MiniLM-L6-v2",
     ) -> None:
-        self._db_path = db_path
+        self._uri = uri
         self._collection_name = collection_name
         self._embedding_model_name = embedding_model
         self._model: SentenceTransformer | None = None
@@ -38,7 +39,7 @@ class MilvusVectorStore(VectorStore):
     def _ensure_client(self) -> MilvusClient:
         """Lazy-create the MilvusClient and auto-create collection if missing."""
         if self._client is None:
-            self._client = MilvusClient(self._db_path)
+            self._client = MilvusClient(uri=self._uri)
 
             if not self._client.has_collection(self._collection_name):
                 model = self._ensure_model()
@@ -82,27 +83,31 @@ class MilvusVectorStore(VectorStore):
 
     async def search(
         self,
-        expr: str = "",
+        *,
+        kind: str | None = None,
+        track_id: str | None = None,
+        since: float | None = None,
         top_k: int = 10,
     ) -> list[Document]:
-        """Filter-based search. No embeddings — like a SQL WHERE clause.
+        """Filter-based search on document metadata.
 
-        Fields: ``track_id`` (str), ``kind`` (str), ``timestamp`` (float), ``content`` (str).
         Results are ordered by timestamp descending (most recent first).
-
-        Examples::
-
-            'track_id == "cam-1"'
-            'timestamp > 1700000000'
-            'track_id == "cam-1" and timestamp > 1700000000'
-            'kind == "analysis"'
-            'track_id in ["cam-1", "cam-2"]'
         """
         client = self._ensure_client()
 
+        clauses: list[str] = []
+        if kind is not None:
+            clauses.append(f'kind == "{kind}"')
+        if track_id is not None:
+            clauses.append(f'track_id == "{track_id}"')
+        if since is not None:
+            clauses.append(f"timestamp > {since}")
+
+        expr = " and ".join(clauses) if clauses else "id >= 0"
+
         results = client.query(
             collection_name=self._collection_name,
-            filter=expr or "id >= 0",
+            filter=expr,
             output_fields=["content", "track_id", "kind", "timestamp"],
             limit=top_k,
         )

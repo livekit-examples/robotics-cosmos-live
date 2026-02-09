@@ -26,7 +26,7 @@ class AudioWorker:
         doc = Document(
             content=text,
             track_id=self.track_id,
-            kind="transcript",
+            kind="audio",
         )
 
         if self._vector_store is not None:

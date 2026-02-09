@@ -10,7 +10,7 @@ from cosmos_core import Overlay
 
 if TYPE_CHECKING:
     from cosmos_control.operator import CVDisplayOperator
-    from cosmos_storage.milvus import MilvusVectorStore
+    from cosmos_storage.qdrant import QdrantVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,22 @@ class CosmosAgent(Agent):
     def __init__(
         self,
         *,
-        vector_store: MilvusVectorStore,
+        vector_store: QdrantVectorStore,
         operator: CVDisplayOperator | None = None,
         instructions: str = "",
     ) -> None:
         super().__init__(instructions=instructions)
         self._vector_store = vector_store
         self._operator = operator
+
+    # ------------------------------------------------------------------
+    # Utility tools
+    # ------------------------------------------------------------------
+
+    @function_tool
+    async def get_current_time(self, ctx: RunContext) -> str:
+        """Get the current time as a unix timestamp in seconds (e.g. 1770628192.75). All timestamps in this system use unix seconds. Call this before using the `since` parameter in search so you can compute the correct cutoff."""
+        return str(time.time())
 
     # ------------------------------------------------------------------
     # Search tools
@@ -61,25 +70,23 @@ class CosmosAgent(Agent):
     async def search(
         self,
         ctx: RunContext,
-        expr: str = "",
+        kind: str | None = None,
+        track_id: str | None = None,
+        since: float | None = None,
         top_k: int = 10,
     ) -> str:
-        """Filter-based search on document fields — like a SQL WHERE clause. No semantic ranking; results ordered by timestamp descending.
+        """Filter-based search on stored documents. No semantic ranking; results ordered by most recent first.
 
-        Available fields: track_id (str), kind (str), timestamp (float), content (str).
-
-        Example filters:
-          'track_id == "cam-1"'
-          'timestamp > 1700000000'
-          'track_id == "cam-1" and timestamp > 1700000000'
-          'kind == "analysis"'
-          'track_id in ["cam-1", "cam-2"]'
+        Use this to retrieve description on the audio or video content of specific feeds, or within a certain time range.
+        All filter parameters are optional — omit any you don't need.
 
         Args:
-            expr: Milvus filter expression. Empty string returns all documents.
+            kind: either "video" or "audio" is availbale. you should use "video" to get video frame analysis and "audio" to get audio transcription.
+            track_id: Filter by feed/participant identity, e.g. "cam-1".
+            since: Only return documents with timestamp greater than this value (unix seconds, e.g. 1770628192.75). Call get_current_time first, then subtract to get the cutoff (e.g. current_time - 300 for the last 5 minutes).
             top_k: Maximum number of results to return.
         """
-        docs = await self._vector_store.search(expr=expr, top_k=top_k)
+        docs = await self._vector_store.search(kind=kind, track_id=track_id, since=since, top_k=top_k)
         if not docs:
             return "No results found."
         lines: list[str] = []

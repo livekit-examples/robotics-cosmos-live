@@ -112,7 +112,7 @@ class TestVideoWorker:
         doc: Document = store.insert.call_args[0][0]
         assert doc.content == "test"
         assert doc.track_id == "t1"
-        assert doc.kind == "analysis"
+        assert doc.kind == "video"
         assert doc.timestamp == 0.3  # frame timestamp, not result timestamp
 
     @pytest.mark.asyncio

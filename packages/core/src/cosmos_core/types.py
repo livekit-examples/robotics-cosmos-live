@@ -28,7 +28,7 @@ class Document:
 
     content: str
     track_id: str = ""
-    kind: str = ""  # e.g. "transcript", "analysis"
+    kind: str = ""  # e.g. "video", "audio"
     timestamp: float = 0.0
     embedding: list[float] | None = None
 

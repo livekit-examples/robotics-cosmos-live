@@ -13,5 +13,19 @@ class VectorStore(ABC):
         """Store a document with its embedding."""
 
     @abstractmethod
+    async def search(
+        self,
+        *,
+        kind: str | None = None,
+        track_id: str | None = None,
+        since: float | None = None,
+        top_k: int = 10,
+    ) -> list[Document]:
+        """Filter-based search on document metadata.
+
+        Results are ordered by timestamp descending (most recent first).
+        """
+
+    @abstractmethod
     async def query(self, text: str, top_k: int = 5) -> list[Document]:
         """Return the *top_k* most similar documents to *text*."""

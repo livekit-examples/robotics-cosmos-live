@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, Any
 
-import cv2
 import numpy as np
 from livekit import rtc
+from PIL import Image, ImageDraw, ImageFont
 
 from cosmos_core import Overlay, StreamOperator
 from cosmos_utils import generate_livekit_token
@@ -25,7 +27,7 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "y_offset": 80,
         "x_offset": 40,
         "bg_color": (0, 0, 0),
-        "bg_alpha": 0.7,
+        "bg_alpha": 180,  # 0–255
         "text_color": (255, 255, 255),
         "padding": (20, 12),
     },
@@ -34,7 +36,7 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "y_offset": 40,
         "x_offset": 40,
         "bg_color": (0, 0, 0),
-        "bg_alpha": 0.8,
+        "bg_alpha": 204,
         "text_color": (255, 255, 255),
         "padding": (16, 8),
     },
@@ -43,16 +45,14 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "y_offset": 0,
         "x_offset": 0,
         "bg_color": (30, 30, 200),
-        "bg_alpha": 0.9,
+        "bg_alpha": 230,
         "text_color": (255, 255, 255),
         "padding": (20, 10),
     },
 }
 
-_FONT_FACE = cv2.FONT_HERSHEY_SIMPLEX
-_FONT_SCALE = 1.0
-_FONT_THICKNESS = 2
-_WINDOW_NAME = "Cosmos Live"
+_FONT_SIZE = 24
+_JPEG_QUALITY = 80
 
 
 class _TrackInfo:
@@ -62,12 +62,96 @@ class _TrackInfo:
         self.video: rtc.Track | None = None
 
 
+# ---------------------------------------------------------------------------
+# MJPEG HTTP handler
+# ---------------------------------------------------------------------------
+
+class _MJPEGHandler(BaseHTTPRequestHandler):
+    """Serves an MJPEG stream or a simple index page."""
+
+    server: _MJPEGServer  # type: ignore[assignment]
+
+    def do_GET(self) -> None:
+        if self.path == "/stream":
+            self._stream_mjpeg()
+        else:
+            self._serve_index()
+
+    def _serve_index(self) -> None:
+        port = self.server.server_address[1]
+        html = (
+            "<!DOCTYPE html><html><head>"
+            "<title>Cosmos Live</title>"
+            "<style>body{margin:0;background:#111;display:flex;"
+            "justify-content:center;align-items:center;height:100vh}</style>"
+            "</head><body>"
+            f'<img src="http://localhost:{port}/stream" '
+            f'style="max-width:100%;max-height:100vh">'
+            "</body></html>"
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        self.wfile.write(html)
+
+    def _stream_mjpeg(self) -> None:
+        self.send_response(200)
+        self.send_header(
+            "Content-Type", "multipart/x-mixed-replace; boundary=frame"
+        )
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        op = self.server.operator
+        last_seq = -1
+
+        while not op._stop_event.is_set():
+            with op._jpeg_cond:
+                # Wait until a new frame is available
+                op._jpeg_cond.wait(timeout=1.0)
+                seq = op._jpeg_seq
+                if seq == last_seq:
+                    continue
+                data = op._jpeg_data
+                last_seq = seq
+
+            if not data:
+                continue
+            try:
+                self.wfile.write(b"--frame\r\n")
+                self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
+                self.wfile.write(data)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                break
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        # Silence per-request logs
+        pass
+
+
+class _MJPEGServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that holds a back-reference to the operator."""
+
+    daemon_threads = True
+
+    def __init__(self, addr: tuple[str, int], operator: CVDisplayOperator) -> None:
+        self.operator = operator
+        super().__init__(addr, _MJPEGHandler)
+
+
+# ---------------------------------------------------------------------------
+# Operator
+# ---------------------------------------------------------------------------
+
 class CVDisplayOperator(StreamOperator):
-    """Stream operator that displays frames in an OpenCV window.
+    """Stream operator that serves composited frames as an MJPEG HTTP stream.
 
     Connects to a LiveKit room as a separate participant, subscribes to
     video tracks, composites a single active feed with text overlays, and
-    displays the result using ``cv2.imshow``.
+    serves the result at ``http://localhost:<port>/stream``.
     """
 
     def __init__(
@@ -95,12 +179,28 @@ class CVDisplayOperator(StreamOperator):
         # Frame lock — protects _latest_frame between asyncio and display thread
         self._frame_lock = threading.Lock()
 
-        # Display thread
+        # Display / compositing thread
         self._stop_event = threading.Event()
         self._display_thread: threading.Thread | None = None
 
+        # MJPEG output shared with HTTP handlers
+        self._jpeg_cond = threading.Condition()
+        self._jpeg_data: bytes = b""
+        self._jpeg_seq: int = 0
+
+        # HTTP server
+        self._http_server: _MJPEGServer | None = None
+        self._http_thread: threading.Thread | None = None
+
         # Placeholder cache
-        self._placeholder: np.ndarray | None = None
+        self._placeholder: Image.Image | None = None
+
+        # Font
+        try:
+            self._font = ImageFont.load_default(size=_FONT_SIZE)
+        except TypeError:
+            # Pillow < 10.1 fallback
+            self._font = ImageFont.load_default()
 
     # --- Public API ---
 
@@ -121,14 +221,27 @@ class CVDisplayOperator(StreamOperator):
         # Connect to LiveKit
         await self._connect_livekit()
 
-        # Start display thread
+        # Start compositing thread
         self._stop_event.clear()
         self._display_thread = threading.Thread(
             target=self._display_loop, name="cv-display", daemon=True
         )
         self._display_thread.start()
 
-        logger.info("CVDisplayOperator started")
+        # Start MJPEG HTTP server
+        port = self._cfg.display_port
+        self._http_server = _MJPEGServer(("0.0.0.0", port), self)
+        self._http_thread = threading.Thread(
+            target=self._http_server.serve_forever,
+            name="mjpeg-http",
+            daemon=True,
+        )
+        self._http_thread.start()
+
+        logger.info(
+            "CVDisplayOperator started — stream at http://localhost:%d/stream",
+            port,
+        )
 
     async def stop(self) -> None:
         """Disconnect from LiveKit, stop tasks, close display."""
@@ -136,6 +249,18 @@ class CVDisplayOperator(StreamOperator):
 
         # Signal thread to exit
         self._stop_event.set()
+
+        # Wake any MJPEG handlers waiting on the condition
+        with self._jpeg_cond:
+            self._jpeg_cond.notify_all()
+
+        # Shut down HTTP server
+        if self._http_server is not None:
+            self._http_server.shutdown()
+            self._http_server = None
+        if self._http_thread is not None:
+            self._http_thread.join(timeout=5)
+            self._http_thread = None
 
         # Cancel async consume task
         if self._consume_video_task is not None:
@@ -296,10 +421,10 @@ class CVDisplayOperator(StreamOperator):
         except Exception:
             logger.exception("Error in video consume loop")
 
-    # --- Display loop (dedicated thread) ---
+    # --- Compositing loop (dedicated thread) ---
 
     def _display_loop(self) -> None:
-        """Composite frames at the target FPS and show via cv2.imshow.
+        """Composite frames at the target FPS and encode to JPEG.
 
         Runs in its own thread with absolute-time tracking to avoid drift.
         """
@@ -312,28 +437,26 @@ class CVDisplayOperator(StreamOperator):
                 frame = self._latest_frame
 
             if frame is None:
-                frame = self._make_placeholder()
+                img = self._make_placeholder()
             else:
-                frame = self._resize_frame(frame)
+                img = self._resize_frame(frame)
 
             # Snapshot overlays under lock
             with self._overlay_lock:
                 overlays = dict(self._overlays) if self._overlays else {}
 
             if overlays:
-                frame = self._apply_overlays(frame, overlays)
+                img = self._apply_overlays(img, overlays)
 
-            # Convert RGB -> BGR for OpenCV display
-            bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            cv2.imshow(_WINDOW_NAME, bgr)
+            # Encode to JPEG and notify MJPEG clients
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=_JPEG_QUALITY)
+            jpeg = buf.getvalue()
 
-            # waitKey is required for the window to refresh; also lets us
-            # detect if the user closed the window (press 'q' to quit).
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                logger.info("User pressed 'q' — stopping display")
-                self._stop_event.set()
-                break
+            with self._jpeg_cond:
+                self._jpeg_data = jpeg
+                self._jpeg_seq += 1
+                self._jpeg_cond.notify_all()
 
             # Advance to next absolute frame time to avoid cumulative drift
             next_frame_time += frame_interval
@@ -345,60 +468,63 @@ class CVDisplayOperator(StreamOperator):
                 # More than one frame behind — reset to avoid death spiral
                 next_frame_time = time.monotonic()
 
-        cv2.destroyAllWindows()
-
     # --- Frame processing ---
 
-    def _resize_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Resize a frame to the output resolution if needed."""
-        h, w = frame.shape[:2]
-        if w == self._cfg.width and h == self._cfg.height:
-            return frame
-        return cv2.resize(
-            frame, (self._cfg.width, self._cfg.height), interpolation=cv2.INTER_LINEAR
-        )
+    def _resize_frame(self, frame: np.ndarray) -> Image.Image:
+        """Convert numpy RGB array to a PIL Image, resizing if needed."""
+        img = Image.fromarray(frame)
+        if img.width != self._cfg.width or img.height != self._cfg.height:
+            img = img.resize(
+                (self._cfg.width, self._cfg.height), Image.LANCZOS
+            )
+        return img
 
-    def _make_placeholder(self) -> np.ndarray:
+    def _make_placeholder(self) -> Image.Image:
         """Return a solid dark placeholder frame at output resolution."""
         if self._placeholder is None:
-            self._placeholder = np.full(
-                (self._cfg.height, self._cfg.width, 3),
+            self._placeholder = Image.new(
+                "RGB",
+                (self._cfg.width, self._cfg.height),
                 self._cfg.placeholder_color,
-                dtype=np.uint8,
             )
         return self._placeholder
 
     # --- Overlay rendering ---
 
     def _apply_overlays(
-        self, frame: np.ndarray, overlays: dict[str, Overlay]
-    ) -> np.ndarray:
-        """Draw text overlays onto the frame using OpenCV."""
-        frame = frame.copy()
+        self, img: Image.Image, overlays: dict[str, Overlay]
+    ) -> Image.Image:
+        """Draw text overlays onto the image using Pillow."""
+        # Work in RGBA so we can alpha-composite
+        base = img.convert("RGBA")
+        overlay_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay_layer)
+
         for slot, overlay in overlays.items():
             text = overlay.data.get("text", "")
             if not text:
                 continue
-            self._draw_text_overlay(frame, slot, text)
-        return frame
+            self._draw_text_overlay(draw, slot, text)
+
+        img = Image.alpha_composite(base, overlay_layer).convert("RGB")
+        return img
 
     def _draw_text_overlay(
         self,
-        frame: np.ndarray,
+        draw: ImageDraw.ImageDraw,
         slot: str,
         text: str,
     ) -> None:
         """Position and draw a text overlay based on the slot layout."""
-        layout = _SLOT_LAYOUTS.get(slot)
-        if layout is None:
-            layout = _SLOT_LAYOUTS["title"]
+        layout = _SLOT_LAYOUTS.get(slot, _SLOT_LAYOUTS["title"])
 
-        (text_w, text_h), baseline = cv2.getTextSize(
-            text, _FONT_FACE, _FONT_SCALE, _FONT_THICKNESS
-        )
+        bbox = draw.textbbox((0, 0), text, font=self._font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
         pad_x, pad_y = layout["padding"]
         bg_w = text_w + pad_x * 2
-        bg_h = text_h + baseline + pad_y * 2
+        bg_h = text_h + pad_y * 2
 
         anchor = layout["anchor"]
         if anchor == "bottom_left":
@@ -415,24 +541,21 @@ class CVDisplayOperator(StreamOperator):
             x = layout["x_offset"]
             y = layout["y_offset"]
 
-        # Draw semi-transparent background rectangle
-        overlay_img = frame[y : y + bg_h, x : x + bg_w].copy()
-        cv2.rectangle(overlay_img, (0, 0), (bg_w, bg_h), layout["bg_color"], -1)
-        alpha = layout["bg_alpha"]
-        frame[y : y + bg_h, x : x + bg_w] = cv2.addWeighted(
-            overlay_img, alpha, frame[y : y + bg_h, x : x + bg_w], 1 - alpha, 0
+        bg_color = layout["bg_color"]
+        bg_alpha = layout["bg_alpha"]
+
+        # Semi-transparent background rectangle
+        draw.rectangle(
+            [x, y, x + bg_w, y + bg_h],
+            fill=(*bg_color, bg_alpha),
         )
 
-        # Draw text centered in the background
+        # Centered text
         text_x = x + (bg_w - text_w) // 2
-        text_y = y + pad_y + text_h
-        cv2.putText(
-            frame,
-            text,
+        text_y = y + pad_y
+        draw.text(
             (text_x, text_y),
-            _FONT_FACE,
-            _FONT_SCALE,
-            layout["text_color"],
-            _FONT_THICKNESS,
-            cv2.LINE_AA,
+            text,
+            fill=layout["text_color"],
+            font=self._font,
         )

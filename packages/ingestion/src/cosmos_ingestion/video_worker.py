@@ -45,7 +45,7 @@ class VideoWorker:
             doc = Document(
                 content=result.answer,
                 track_id=self.track_id,
-                kind="analysis",
+                kind="video",
                 timestamp=timestamp,
             )
             await self._vector_store.insert(doc)
