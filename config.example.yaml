@@ -30,3 +30,4 @@ operator:
   height: 1080
   fps: 30
   placeholder_color: [30, 30, 30]
+  display_port: 9090
