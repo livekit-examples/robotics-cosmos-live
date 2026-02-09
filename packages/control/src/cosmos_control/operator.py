@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import subprocess
-import tempfile
 import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+import cv2
 import numpy as np
 from livekit import rtc
-from PIL import Image, ImageDraw, ImageFont
 
 from cosmos_core import Overlay, StreamOperator
 from cosmos_utils import generate_livekit_token
 
 if TYPE_CHECKING:
-    from cosmos_live.config import LiveKitConfig, StreamConfig
+    from cosmos_live.config import LiveKitConfig, OperatorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +24,8 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "anchor": "bottom_left",
         "y_offset": 80,
         "x_offset": 40,
-        "bg_color": (0, 0, 0, 180),
+        "bg_color": (0, 0, 0),
+        "bg_alpha": 0.7,
         "text_color": (255, 255, 255),
         "padding": (20, 12),
     },
@@ -35,7 +33,8 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "anchor": "top_left",
         "y_offset": 40,
         "x_offset": 40,
-        "bg_color": (0, 0, 0, 200),
+        "bg_color": (0, 0, 0),
+        "bg_alpha": 0.8,
         "text_color": (255, 255, 255),
         "padding": (16, 8),
     },
@@ -43,11 +42,17 @@ _SLOT_LAYOUTS: dict[str, dict[str, Any]] = {
         "anchor": "top_full",
         "y_offset": 0,
         "x_offset": 0,
-        "bg_color": (200, 30, 30, 230),
+        "bg_color": (30, 30, 200),
+        "bg_alpha": 0.9,
         "text_color": (255, 255, 255),
         "padding": (20, 10),
     },
 }
+
+_FONT_FACE = cv2.FONT_HERSHEY_SIMPLEX
+_FONT_SCALE = 1.0
+_FONT_THICKNESS = 2
+_WINDOW_NAME = "Cosmos Live"
 
 
 class _TrackInfo:
@@ -55,25 +60,23 @@ class _TrackInfo:
 
     def __init__(self) -> None:
         self.video: rtc.Track | None = None
-        self.audio: rtc.Track | None = None
 
 
-class FFmpegStreamOperator(StreamOperator):
-    """Stream operator backed by FFmpeg for RTMP/YouTube output.
+class CVDisplayOperator(StreamOperator):
+    """Stream operator that displays frames in an OpenCV window.
 
     Connects to a LiveKit room as a separate participant, subscribes to
-    tracks, composites a single active feed with text overlays, and
-    streams video+audio to an RTMP endpoint via FFmpeg.
+    video tracks, composites a single active feed with text overlays, and
+    displays the result using ``cv2.imshow``.
     """
 
     def __init__(
         self,
-        stream_config: StreamConfig,
+        operator_config: OperatorConfig,
         livekit_config: LiveKitConfig,
     ) -> None:
-        self._stream_config = stream_config
+        self._cfg = operator_config
         self._livekit_config = livekit_config
-        self._op = stream_config.operator
 
         # LiveKit state
         self._room: rtc.Room | None = None
@@ -84,31 +87,17 @@ class FFmpegStreamOperator(StreamOperator):
         self._feed_lock = asyncio.Lock()
         self._latest_frame: np.ndarray | None = None
         self._consume_video_task: asyncio.Task[None] | None = None
-        self._consume_audio_task: asyncio.Task[None] | None = None
 
-        # Overlays — threading.Lock because the render thread reads them
+        # Overlays — threading.Lock because the display thread reads them
         self._overlays: dict[str, Overlay] = {}
         self._overlay_lock = threading.Lock()
 
-        # Frame lock — protects _latest_frame between asyncio and render thread
+        # Frame lock — protects _latest_frame between asyncio and display thread
         self._frame_lock = threading.Lock()
 
-        # FFmpeg
-        self._ffmpeg_proc: subprocess.Popen[bytes] | None = None
-        self._audio_fifo_path: str | None = None
-        self._audio_fifo_fd: int | None = None
-
-        # Audio write lock — prevents interleaved writes from consume + silence
-        self._audio_write_lock = threading.Lock()
-
-        # Threads
+        # Display thread
         self._stop_event = threading.Event()
-        self._render_thread: threading.Thread | None = None
-        self._silence_thread: threading.Thread | None = None
-        self._audio_active = threading.Event()
-
-        # Font cache
-        self._font: ImageFont.FreeTypeFont | ImageFont.ImageFont | None = None
+        self._display_thread: threading.Thread | None = None
 
         # Placeholder cache
         self._placeholder: np.ndarray | None = None
@@ -121,105 +110,53 @@ class FFmpegStreamOperator(StreamOperator):
         return list(self._available_tracks.keys())
 
     async def start(self) -> None:
-        """Create audio FIFO, spawn FFmpeg, connect to LiveKit, start render loop.
+        """Connect to LiveKit and start the display loop.
 
         Safe to call multiple times — subsequent calls are no-ops.
         """
-        if self._ffmpeg_proc is not None:
+        if self._display_thread is not None:
             return
-        logger.info("Starting FFmpegStreamOperator")
-
-        # Create audio FIFO
-        fifo_dir = tempfile.mkdtemp(prefix="cosmos_")
-        self._audio_fifo_path = os.path.join(fifo_dir, "audio_fifo")
-        os.mkfifo(self._audio_fifo_path)
-
-        # Spawn FFmpeg
-        self._spawn_ffmpeg()
-
-        # Open audio FIFO for writing (blocks until FFmpeg opens the read end).
-        # Run in a thread to avoid blocking the event loop.
-        self._audio_fifo_fd = await asyncio.to_thread(
-            os.open, self._audio_fifo_path, os.O_WRONLY
-        )
+        logger.info("Starting CVDisplayOperator")
 
         # Connect to LiveKit
         await self._connect_livekit()
 
-        # Start render and silence-fill threads (dedicated for precise timing)
+        # Start display thread
         self._stop_event.clear()
-        self._render_thread = threading.Thread(
-            target=self._render_loop, name="render", daemon=True
+        self._display_thread = threading.Thread(
+            target=self._display_loop, name="cv-display", daemon=True
         )
-        self._silence_thread = threading.Thread(
-            target=self._silence_fill, name="silence-fill", daemon=True
-        )
-        self._render_thread.start()
-        self._silence_thread.start()
+        self._display_thread.start()
 
-        logger.info("FFmpegStreamOperator started")
+        logger.info("CVDisplayOperator started")
 
     async def stop(self) -> None:
-        """Disconnect from LiveKit, stop tasks, close FFmpeg, clean up."""
-        logger.info("Stopping FFmpegStreamOperator")
+        """Disconnect from LiveKit, stop tasks, close display."""
+        logger.info("Stopping CVDisplayOperator")
 
-        # Signal threads to exit
+        # Signal thread to exit
         self._stop_event.set()
 
-        # Cancel async consume tasks
-        for task in (self._consume_video_task, self._consume_audio_task):
-            if task is not None:
-                task.cancel()
+        # Cancel async consume task
+        if self._consume_video_task is not None:
+            self._consume_video_task.cancel()
+            await asyncio.gather(self._consume_video_task, return_exceptions=True)
+            self._consume_video_task = None
 
-        # Wait for consume tasks to finish
-        tasks = [
-            t
-            for t in (self._consume_video_task, self._consume_audio_task)
-            if t is not None
-        ]
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Join threads (they check _stop_event, should exit promptly)
-        if self._render_thread is not None:
-            self._render_thread.join(timeout=5)
-            self._render_thread = None
-        if self._silence_thread is not None:
-            self._silence_thread.join(timeout=5)
-            self._silence_thread = None
+        # Join display thread
+        if self._display_thread is not None:
+            self._display_thread.join(timeout=5)
+            self._display_thread = None
 
         # Disconnect from LiveKit
         if self._room is not None:
             await self._room.disconnect()
             self._room = None
 
-        # Close FFmpeg stdin to signal EOF
-        if self._ffmpeg_proc is not None and self._ffmpeg_proc.stdin:
-            self._ffmpeg_proc.stdin.close()
-
-        # Close audio FIFO
-        if self._audio_fifo_fd is not None:
-            os.close(self._audio_fifo_fd)
-            self._audio_fifo_fd = None
-
-        # Wait for FFmpeg to exit
-        if self._ffmpeg_proc is not None:
-            self._ffmpeg_proc.wait(timeout=10)
-            self._ffmpeg_proc = None
-
-        # Clean up FIFO file
-        if self._audio_fifo_path is not None:
-            try:
-                os.unlink(self._audio_fifo_path)
-                os.rmdir(os.path.dirname(self._audio_fifo_path))
-            except OSError:
-                pass
-            self._audio_fifo_path = None
-
-        logger.info("FFmpegStreamOperator stopped")
+        logger.info("CVDisplayOperator stopped")
 
     async def set_feed(self, feed_id: str) -> None:
-        """Switch the active video/audio feed by participant identity."""
+        """Switch the active video feed by participant identity."""
         async with self._feed_lock:
             if feed_id == self._active_feed:
                 return
@@ -227,8 +164,8 @@ class FFmpegStreamOperator(StreamOperator):
             old_feed = self._active_feed
             logger.info("Switching feed: %s -> %s", old_feed, feed_id)
 
-            # Cancel old consume tasks
-            await self._cancel_consume_tasks()
+            # Cancel old consume task
+            await self._cancel_consume_task()
 
             self._active_feed = feed_id
             with self._frame_lock:
@@ -236,8 +173,10 @@ class FFmpegStreamOperator(StreamOperator):
 
             # Start consuming new feed if tracks are available
             track_info = self._available_tracks.get(feed_id)
-            if track_info is not None:
-                self._start_consume_tasks(track_info)
+            if track_info is not None and track_info.video is not None:
+                self._consume_video_task = asyncio.create_task(
+                    self._consume_video(track_info.video)
+                )
             else:
                 logger.warning(
                     "Feed %s not found in available tracks; "
@@ -279,26 +218,12 @@ class FFmpegStreamOperator(StreamOperator):
             if track.kind == rtc.TrackKind.KIND_VIDEO:
                 info.video = track
                 logger.info("Video track available from %s", identity)
-            elif track.kind == rtc.TrackKind.KIND_AUDIO:
-                info.audio = track
-                logger.info("Audio track available from %s", identity)
 
-            # If this participant is the active feed and we're not consuming yet,
-            # start consuming.
-            if identity == self._active_feed:
-                if (
-                    track.kind == rtc.TrackKind.KIND_VIDEO
-                    and self._consume_video_task is None
-                ):
+                # If this participant is the active feed and we're not
+                # consuming yet, start consuming.
+                if identity == self._active_feed and self._consume_video_task is None:
                     self._consume_video_task = asyncio.create_task(
                         self._consume_video(track)
-                    )
-                elif (
-                    track.kind == rtc.TrackKind.KIND_AUDIO
-                    and self._consume_audio_task is None
-                ):
-                    self._consume_audio_task = asyncio.create_task(
-                        self._consume_audio(track)
                     )
 
         @self._room.on("track_unsubscribed")
@@ -319,15 +244,10 @@ class FFmpegStreamOperator(StreamOperator):
                     self._consume_video_task = None
                     with self._frame_lock:
                         self._latest_frame = None
-            elif track.kind == rtc.TrackKind.KIND_AUDIO:
-                info.audio = None
-                if identity == self._active_feed and self._consume_audio_task is not None:
-                    self._consume_audio_task.cancel()
-                    self._consume_audio_task = None
 
-            # Remove participant entry if no tracks remain
-            if info.video is None and info.audio is None:
-                self._available_tracks.pop(identity, None)
+                # Remove participant entry if no video track remains
+                if info.video is None:
+                    self._available_tracks.pop(identity, None)
 
             logger.info(
                 "Track unsubscribed: kind=%s from %s", track.kind, identity
@@ -343,34 +263,16 @@ class FFmpegStreamOperator(StreamOperator):
 
     # --- Feed consumption ---
 
-    async def _cancel_consume_tasks(self) -> None:
-        """Cancel running video/audio consume tasks."""
-        tasks: list[asyncio.Task[None]] = []
+    async def _cancel_consume_task(self) -> None:
+        """Cancel the running video consume task."""
         if self._consume_video_task is not None:
             self._consume_video_task.cancel()
-            tasks.append(self._consume_video_task)
+            await asyncio.gather(self._consume_video_task, return_exceptions=True)
             self._consume_video_task = None
-        if self._consume_audio_task is not None:
-            self._consume_audio_task.cancel()
-            tasks.append(self._consume_audio_task)
-            self._consume_audio_task = None
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    def _start_consume_tasks(self, track_info: _TrackInfo) -> None:
-        """Spawn consume tasks for the given participant's tracks."""
-        if track_info.video is not None:
-            self._consume_video_task = asyncio.create_task(
-                self._consume_video(track_info.video)
-            )
-        if track_info.audio is not None:
-            self._consume_audio_task = asyncio.create_task(
-                self._consume_audio(track_info.audio)
-            )
 
     async def _consume_video(self, track: rtc.Track) -> None:
         """Read frames from a LiveKit video track and store the latest."""
-        frame_interval = 1.0 / self._op.fps
+        frame_interval = 1.0 / self._cfg.fps
         last_frame_time = 0.0
 
         try:
@@ -394,40 +296,14 @@ class FFmpegStreamOperator(StreamOperator):
         except Exception:
             logger.exception("Error in video consume loop")
 
-    async def _consume_audio(self, track: rtc.Track) -> None:
-        """Read audio from a LiveKit audio track and write PCM to the FIFO."""
-        try:
-            audio_stream = rtc.AudioStream(
-                track,
-                sample_rate=self._op.audio_sample_rate,
-                num_channels=self._op.audio_channels,
-            )
-            async for audio_event in audio_stream:
-                audio_frame = audio_event.frame
-                pcm_data = audio_frame.data.tobytes()
-                self._audio_active.set()
-                await asyncio.to_thread(self._write_audio_fifo, pcm_data)
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Error in audio consume loop")
+    # --- Display loop (dedicated thread) ---
 
-    def _write_audio_fifo(self, data: bytes) -> None:
-        """Write audio data to the FIFO, serialised by lock."""
-        with self._audio_write_lock:
-            fd = self._audio_fifo_fd
-            if fd is not None:
-                os.write(fd, data)
-
-    # --- Render loop (dedicated thread) ---
-
-    def _render_loop(self) -> None:
-        """Composite frames at the target FPS and write to FFmpeg stdin.
+    def _display_loop(self) -> None:
+        """Composite frames at the target FPS and show via cv2.imshow.
 
         Runs in its own thread with absolute-time tracking to avoid drift.
         """
-        frame_interval = 1.0 / self._op.fps
-        frame_size = self._op.width * self._op.height * 3
+        frame_interval = 1.0 / self._cfg.fps
         next_frame_time = time.monotonic()
 
         while not self._stop_event.is_set():
@@ -447,113 +323,47 @@ class FFmpegStreamOperator(StreamOperator):
             if overlays:
                 frame = self._apply_overlays(frame, overlays)
 
-            # Write to FFmpeg
-            rgb_bytes = frame.tobytes()
-            if len(rgb_bytes) == frame_size and self._ffmpeg_proc is not None:
-                stdin = self._ffmpeg_proc.stdin
-                if stdin is not None:
-                    try:
-                        stdin.write(rgb_bytes)
-                    except BrokenPipeError:
-                        logger.error("FFmpeg stdin pipe broken, stopping render")
-                        break
+            # Convert RGB -> BGR for OpenCV display
+            bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            cv2.imshow(_WINDOW_NAME, bgr)
+
+            # waitKey is required for the window to refresh; also lets us
+            # detect if the user closed the window (press 'q' to quit).
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                logger.info("User pressed 'q' — stopping display")
+                self._stop_event.set()
+                break
 
             # Advance to next absolute frame time to avoid cumulative drift
             next_frame_time += frame_interval
             sleep_time = next_frame_time - time.monotonic()
             if sleep_time > 0:
-                # wait() returns immediately if stop_event is set
                 if self._stop_event.wait(timeout=sleep_time):
                     break
             elif sleep_time < -frame_interval:
                 # More than one frame behind — reset to avoid death spiral
                 next_frame_time = time.monotonic()
 
-    # --- Silence fill (dedicated thread) ---
-
-    def _silence_fill(self) -> None:
-        """Write silence to the audio FIFO when no real audio is flowing."""
-        # 10ms of silence: sample_rate * channels * 2 bytes/sample * 0.01s
-        chunk_size = int(
-            self._op.audio_sample_rate * self._op.audio_channels * 2 * 0.01
-        )
-        silence = bytes(chunk_size)
-        interval = 0.01  # 10ms
-
-        while not self._stop_event.is_set():
-            self._audio_active.clear()
-            # Sleep 10ms; returns True immediately if stop requested
-            if self._stop_event.wait(timeout=interval):
-                break
-            if not self._audio_active.is_set():
-                try:
-                    self._write_audio_fifo(silence)
-                except OSError:
-                    pass
-
-    # --- FFmpeg management ---
-
-    def _spawn_ffmpeg(self) -> None:
-        """Start the FFmpeg subprocess for RTMP streaming."""
-        rtmp_url = (
-            f"{self._stream_config.rtmp_url}/"
-            f"{self._stream_config.stream_key.get_secret_value()}"
-        )
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            # Video input: raw RGB from stdin
-            "-f", "rawvideo",
-            "-pix_fmt", "rgb24",
-            "-s", f"{self._op.width}x{self._op.height}",
-            "-r", str(self._op.fps),
-            "-i", "pipe:0",
-            # Audio input: raw PCM from FIFO
-            "-f", "s16le",
-            "-ar", str(self._op.audio_sample_rate),
-            "-ac", str(self._op.audio_channels),
-            "-i", self._audio_fifo_path,
-            # Video encoding
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", self._op.preset,
-            "-b:v", self._op.video_bitrate,
-            "-g", str(self._op.gop_size),
-            "-keyint_min", str(self._op.gop_size),
-            # Audio encoding
-            "-c:a", "aac",
-            "-b:a", self._op.audio_bitrate,
-            # Output
-            "-f", "flv",
-            rtmp_url,
-        ]
-
-        logger.info("Spawning FFmpeg: %s", " ".join(cmd[:6]) + " ...")
-        self._ffmpeg_proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
+        cv2.destroyAllWindows()
 
     # --- Frame processing ---
 
     def _resize_frame(self, frame: np.ndarray) -> np.ndarray:
         """Resize a frame to the output resolution if needed."""
         h, w = frame.shape[:2]
-        if w == self._op.width and h == self._op.height:
+        if w == self._cfg.width and h == self._cfg.height:
             return frame
-        img = Image.fromarray(frame)
-        img = img.resize((self._op.width, self._op.height), Image.LANCZOS)
-        return np.array(img)
+        return cv2.resize(
+            frame, (self._cfg.width, self._cfg.height), interpolation=cv2.INTER_LINEAR
+        )
 
     def _make_placeholder(self) -> np.ndarray:
         """Return a solid dark placeholder frame at output resolution."""
         if self._placeholder is None:
             self._placeholder = np.full(
-                (self._op.height, self._op.width, 3),
-                self._op.placeholder_color,
+                (self._cfg.height, self._cfg.width, 3),
+                self._cfg.placeholder_color,
                 dtype=np.uint8,
             )
         return self._placeholder
@@ -563,85 +373,66 @@ class FFmpegStreamOperator(StreamOperator):
     def _apply_overlays(
         self, frame: np.ndarray, overlays: dict[str, Overlay]
     ) -> np.ndarray:
-        """Draw text overlays onto the frame using Pillow."""
-        # Work with RGBA for semi-transparent backgrounds
-        img = Image.fromarray(frame).convert("RGBA")
-        overlay_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay_layer)
-        font = self._get_font()
-
+        """Draw text overlays onto the frame using OpenCV."""
+        frame = frame.copy()
         for slot, overlay in overlays.items():
             text = overlay.data.get("text", "")
             if not text:
                 continue
-            self._draw_text_overlay(draw, font, slot, text)
-
-        img = Image.alpha_composite(img, overlay_layer)
-        return np.array(img.convert("RGB"))
+            self._draw_text_overlay(frame, slot, text)
+        return frame
 
     def _draw_text_overlay(
         self,
-        draw: ImageDraw.ImageDraw,
-        font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+        frame: np.ndarray,
         slot: str,
         text: str,
     ) -> None:
         """Position and draw a text overlay based on the slot layout."""
         layout = _SLOT_LAYOUTS.get(slot)
         if layout is None:
-            # Unknown slot — draw at top-left as fallback
             layout = _SLOT_LAYOUTS["title"]
 
-        bbox = font.getbbox(text)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
+        (text_w, text_h), baseline = cv2.getTextSize(
+            text, _FONT_FACE, _FONT_SCALE, _FONT_THICKNESS
+        )
         pad_x, pad_y = layout["padding"]
         bg_w = text_w + pad_x * 2
-        bg_h = text_h + pad_y * 2
+        bg_h = text_h + baseline + pad_y * 2
 
         anchor = layout["anchor"]
         if anchor == "bottom_left":
             x = layout["x_offset"]
-            y = self._op.height - layout["y_offset"] - bg_h
+            y = self._cfg.height - layout["y_offset"] - bg_h
         elif anchor == "top_left":
             x = layout["x_offset"]
             y = layout["y_offset"]
         elif anchor == "top_full":
             x = 0
             y = layout["y_offset"]
-            bg_w = self._op.width
+            bg_w = self._cfg.width
         else:
             x = layout["x_offset"]
             y = layout["y_offset"]
 
-        # Draw background rectangle
-        draw.rectangle(
-            [x, y, x + bg_w, y + bg_h],
-            fill=layout["bg_color"],
+        # Draw semi-transparent background rectangle
+        overlay_img = frame[y : y + bg_h, x : x + bg_w].copy()
+        cv2.rectangle(overlay_img, (0, 0), (bg_w, bg_h), layout["bg_color"], -1)
+        alpha = layout["bg_alpha"]
+        frame[y : y + bg_h, x : x + bg_w] = cv2.addWeighted(
+            overlay_img, alpha, frame[y : y + bg_h, x : x + bg_w], 1 - alpha, 0
         )
 
         # Draw text centered in the background
         text_x = x + (bg_w - text_w) // 2
-        text_y = y + (bg_h - text_h) // 2
-        draw.text(
-            (text_x, text_y),
+        text_y = y + pad_y + text_h
+        cv2.putText(
+            frame,
             text,
-            fill=layout["text_color"],
-            font=font,
+            (text_x, text_y),
+            _FONT_FACE,
+            _FONT_SCALE,
+            layout["text_color"],
+            _FONT_THICKNESS,
+            cv2.LINE_AA,
         )
-
-    def _get_font(self) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-        """Lazy-load the configured font."""
-        if self._font is None:
-            if self._op.font_path:
-                self._font = ImageFont.truetype(
-                    self._op.font_path, self._op.font_size
-                )
-            else:
-                try:
-                    self._font = ImageFont.truetype(
-                        "DejaVuSans.ttf", self._op.font_size
-                    )
-                except OSError:
-                    self._font = ImageFont.load_default()
-        return self._font

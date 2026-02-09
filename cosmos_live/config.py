@@ -29,21 +29,7 @@ class OperatorConfig(BaseModel):
     width: int = 1920
     height: int = 1080
     fps: int = 30
-    font_path: str = ""
-    font_size: int = 36
-    video_bitrate: str = "4500k"
-    audio_bitrate: str = "128k"
-    audio_sample_rate: int = 44100
-    audio_channels: int = 2
-    gop_size: int = 60
-    preset: str = "veryfast"
     placeholder_color: tuple[int, int, int] = (30, 30, 30)
-
-
-class StreamConfig(BaseModel):
-    rtmp_url: str
-    stream_key: SecretStr
-    operator: OperatorConfig = OperatorConfig()
 
 
 class AgentConfig(BaseModel):
@@ -75,7 +61,7 @@ class Config(BaseModel):
     livekit: LiveKitConfig
     vllm: VLLMConfig
     milvus: MilvusConfig
-    stream: StreamConfig | None = None
+    operator: OperatorConfig | None = None
     video_worker: VideoWorkerConfig = VideoWorkerConfig()
     agent: AgentConfig = AgentConfig()
 

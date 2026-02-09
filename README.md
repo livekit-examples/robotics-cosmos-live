@@ -174,7 +174,7 @@ packages/
 ├── control/                Voice agent + stream operator
 │   └── cosmos_control/
 │       ├── agent.py            CosmosAgent — LiveKit voice agent with tools
-│       └── operator.py         FFmpegStreamOperator — composites and streams
+│       └── operator.py         CVDisplayOperator — composites and displays via OpenCV
 │
 └── utils/                  Shared utilities
     └── cosmos_utils/
@@ -200,7 +200,7 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management. Al
 | `pymilvus` >= 2.4                | storage            | Milvus vector database client                                               |
 | `milvus-lite` >= 2.4             | storage            | Serverless embedded Milvus (runs locally, no server needed)                 |
 | `sentence-transformers` >= 3.0   | storage            | Text embedding model (`all-MiniLM-L6-v2`, 384-dim vectors)                  |
-| `Pillow` >= 10.0                 | control            | Image processing and text overlay rendering on stream frames                |
+| `opencv-python` >= 4.10          | control            | Frame display (`imshow`), resize, and text overlay rendering                |
 | `numpy` >= 2.0                   | core, control      | Numerical computing, frame data representation                              |
 | `pydantic` >= 2.12.5             | root, utils        | Config validation and type-safe YAML parsing                                |
 | `pyyaml` >= 6.0.3                | root               | YAML config file loading                                                    |

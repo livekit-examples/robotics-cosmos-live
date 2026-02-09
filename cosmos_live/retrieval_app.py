@@ -14,7 +14,7 @@ from livekit.agents.voice import AgentServer
 from livekit.plugins import silero
 
 from cosmos_control.agent import CosmosAgent
-from cosmos_control.operator import FFmpegStreamOperator
+from cosmos_control.operator import CVDisplayOperator
 from cosmos_live.config import Config
 from cosmos_storage import MilvusVectorStore
 
@@ -43,9 +43,9 @@ vector_store = MilvusVectorStore(
     embedding_model=config.milvus.embedding_model,
 )
 
-operator: FFmpegStreamOperator | None = None
-if config.stream is not None:
-    operator = FFmpegStreamOperator(config.stream, config.livekit)
+operator: CVDisplayOperator | None = None
+if config.operator is not None:
+    operator = CVDisplayOperator(config.operator, config.livekit)
 
 vad = silero.VAD.load()
 
