@@ -9,7 +9,7 @@ from livekit.agents import Agent, RunContext, function_tool
 from cosmos_core import Overlay
 
 if TYPE_CHECKING:
-    from cosmos_control.operator import FFmpegStreamOperator
+    from cosmos_control.operator import CVDisplayOperator
     from cosmos_storage.milvus import MilvusVectorStore
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class CosmosAgent(Agent):
         self,
         *,
         vector_store: MilvusVectorStore,
-        operator: FFmpegStreamOperator | None = None,
+        operator: CVDisplayOperator | None = None,
         instructions: str = "",
     ) -> None:
         super().__init__(instructions=instructions)

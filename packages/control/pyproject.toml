@@ -7,7 +7,7 @@ dependencies = [
     "cosmos-core",
     "cosmos-utils",
     "cosmos-storage",
-    "Pillow>=10.0",
+    "opencv-python>=4.10",
     "livekit>=1.0",
     "livekit-agents>=1.0",
     "numpy",
