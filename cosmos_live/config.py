@@ -30,6 +30,7 @@ class OperatorConfig(BaseModel):
     height: int = 1080
     fps: int = 30
     placeholder_color: tuple[int, int, int] = (30, 30, 30)
+    display_port: int = 9090
 
 
 class AgentConfig(BaseModel):
