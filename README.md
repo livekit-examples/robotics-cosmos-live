@@ -150,6 +150,7 @@ Vectors are 384-dim normalized embeddings (`all-MiniLM-L6-v2`) with `COSINE` dis
 
 - [uv](https://docs.astral.sh/uv/) — Python package manager
 - [Docker](https://www.docker.com/) — for running Qdrant
+- [Nebius](https://nebius.com/) - for running Cosmos-Reason2-8B
 
 ### Setup
 
@@ -179,6 +180,10 @@ Vectors are 384-dim normalized embeddings (`all-MiniLM-L6-v2`) with `COSINE` dis
    docker run -d --name qdrant -p 6333:6333 -p 6334:6334 \
      -v qdrant_data:/qdrant/storage qdrant/qdrant
    ```
+   
+5. **Start vLLM**
+
+   Follow instructions here to setup `nvidia/Cosmos-Reason2-8B` on a Nebius VM https://nvidia-cosmos.github.io/cosmos-cookbook/getting_started/nebius/reason2/reason2_on_nebius.html
 
 ### Running
 
