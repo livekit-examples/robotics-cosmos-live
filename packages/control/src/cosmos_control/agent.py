@@ -79,6 +79,8 @@ class CosmosAgent(Agent):
 
         Use this to retrieve description on the audio or video content of specific feeds, or within a certain time range.
         All filter parameters are optional — omit any you don't need.
+        
+        Any time results should be spoken after converting to pacific time like two thirty pm, or five thirty six am.
 
         Args:
             kind: either "video" or "audio" is availbale. you should use "video" to get video frame analysis and "audio" to get audio transcription.

@@ -4,7 +4,7 @@
 
 # cosmos-live
 
-An intelligent video feed management system that orchestrates multiple live camera streams through a multiplexed architecture, enabling both manual voice control and AI-driven automated feed selection.
+An intelligent video feed management system that orchestrates multiple live camera streams to enable both manual voice control and AI-driven stream monitoring and querying.  The video streaming frontend uses LiveKit to publish streams into a room, LiveKit Agents for voice control, and Cosmos Reason 2 on Nebius for video understanding.
 
 ## Table of Contents
 
@@ -23,9 +23,9 @@ An intelligent video feed management system that orchestrates multiple live came
 
 Direct voice commands for explicit feed selection.
 
-> **User:** "put feed 1 up"
+> **User:** "put feed 1 up" or "show me camera 1"
 >
-> **System:** The agent calls `switch_feed` to cut the live output to the requested camera.
+> **System:** The agent calls `switch_feed` to switch the live output to the requested camera.
 
 ### Autonomous Content Selection
 
@@ -39,9 +39,9 @@ AI agent analyzes available feeds in real-time and selects the most engaging con
 
 Multi-camera person tracking that automatically switches feeds to maintain continuous coverage.
 
-> **User:** "follow binh through cameras"
+> **User:** "follow person with black shirt through cameras"
 >
-> **System:** The agent searches for recent vision chunks mentioning binh across all cameras. When binh leaves one camera and appears in another, the agent switches feeds to follow.
+> **System:** The agent searches for recent vision chunks mentioning a person with matching description across all cameras. When matching person leaves one camera and appears in another, the agent switches feeds to follow.
 
 ### Narrative Mode
 
@@ -55,7 +55,7 @@ Intelligent feed sequencing that creates cohesive storylines from multiple camer
 
 Real-time surveillance analysis powered by semantic search over continuous video feeds.
 
-> **User:** "is there any suspicious activity in the last 10 minutes?"
+> **User:** "is there any X activity in the last 10 minutes?"
 >
 > **System:** The agent searches for relevant vision analysis chunks and reports back with camera ID, time, and description of each flagged event.
 
@@ -65,6 +65,10 @@ The system runs two separate processes that share a Qdrant vector store:
 
 - **Ingestion** (`ingestion_app.py`) — subscribes to camera feeds, runs vision analysis, writes text chunks to the store.
 - **Retrieval** (`retrieval_app.py`) — LiveKit voice agent that reads from the store, answers questions, and controls the live stream output.
+
+It also requires N number of camera publisher processes to be running to publish video streams:
+
+- **Publisher** (`publisher_app.py) - Publishes a local camera to the LiveKit room configured.
 
 ```
           INGESTION                               RETRIEVAL
@@ -181,7 +185,7 @@ Vectors are 384-dim normalized embeddings (`all-MiniLM-L6-v2`) with `COSINE` dis
      -v qdrant_data:/qdrant/storage qdrant/qdrant
    ```
    
-5. **Start vLLM**
+5. **Start vLLM with Cosmos Reason 2**
 
    Follow instructions here to setup `nvidia/Cosmos-Reason2-8B` on a Nebius VM https://nvidia-cosmos.github.io/cosmos-cookbook/getting_started/nebius/reason2/reason2_on_nebius.html
 
@@ -197,7 +201,14 @@ uv run python -m cosmos_live.ingestion_app
 uv run python -m cosmos_live.retrieval_app console
 ```
 
-The MJPEG stream is available at `http://localhost:9090/stream` when the operator is configured.
+Run camera clients in seprate terminals:
+
+```bash
+# publish camera index 0 as identity `cam1`
+uv run python -m cosmos_live.publisher_app --identity cam1 --camera-index 0
+```
+
+Open `http://localhost:9090/stream` to view the AI operator stream.
 
 ## Configuration
 

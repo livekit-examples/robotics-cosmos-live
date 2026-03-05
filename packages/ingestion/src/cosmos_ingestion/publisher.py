@@ -57,7 +57,14 @@ class Publisher:
         await room.connect(self._config.url, token)
         logger.info("Connected, publishing video track")
 
-        await room.local_participant.publish_track(track)
+        options = rtc.TrackPublishOptions(
+            source=rtc.TrackSource.SOURCE_CAMERA,
+            video_encoding=rtc.VideoEncoding(
+                max_framerate=self._fps,
+                max_bitrate=5_000_000,
+            ),
+        )
+        await room.local_participant.publish_track(track, options)
 
         try:
             await self._capture_loop(video_source)
@@ -87,6 +94,7 @@ class Publisher:
             self._height,
         )
 
+        frame_count = 0
         try:
             while self._running:
                 ok, bgr = await asyncio.to_thread(cap.read)
@@ -104,6 +112,9 @@ class Publisher:
                     rgba.tobytes(),
                 )
                 video_source.capture_frame(frame)
+                frame_count += 1
+                if frame_count % (self._fps * 5) == 0:
+                    logger.info("Published %d frames", frame_count)
 
                 await asyncio.sleep(frame_interval)
         finally:
