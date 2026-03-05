@@ -76,9 +76,9 @@ class AgentConfig(BaseModel):
 
 
 class VideoWorkerConfig(BaseModel):
-    buffer_size: int = 60
+    buffer_size: int = 120
     sample_count: int = 20
-    target_fps: int = 10
+    target_fps: int = 30
     prompt: str = "Describe what is happening in these video frames."
 
 

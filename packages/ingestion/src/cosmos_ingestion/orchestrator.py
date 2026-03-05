@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TARGET_FPS = 10
+DEFAULT_TARGET_FPS = 30
 
 
 class Orchestrator:

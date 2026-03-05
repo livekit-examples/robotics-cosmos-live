@@ -14,8 +14,18 @@ from cosmos_core import Frame, AnalysisResult, VisionModel
 from cosmos_live.config import VLLMConfig
 
 
-def _encode_frame(frame: Frame, quality: int = 85) -> str:
-    """JPEG-encode a numpy frame and return a base64 data URI."""
+MAX_FRAME_DIM = 512
+
+
+def _encode_frame(frame: Frame, quality: int = 75) -> str:
+    """Resize (if needed), JPEG-encode, and return a base64 data URI."""
+    h, w = frame.shape[:2]
+    if max(h, w) > MAX_FRAME_DIM:
+        scale = MAX_FRAME_DIM / max(h, w)
+        frame = cv2.resize(
+            frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA
+        )
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     success, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not success:
         raise ValueError("Failed to encode frame as JPEG")
