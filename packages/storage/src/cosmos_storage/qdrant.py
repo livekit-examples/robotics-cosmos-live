@@ -146,26 +146,57 @@ class QdrantVectorStore(VectorStore):
             for r in records
         ]
 
-    async def query(self, text: str, top_k: int = 5) -> list[Document]:
+    async def query(
+        self,
+        text: str,
+        top_k: int = 5,
+        since: float | None = None,
+        score_threshold: float | None = None,
+    ) -> list[Document]:
         """Embed query text, search Qdrant, and return matching Documents."""
         client = self._ensure_client()
         vectors = self._embed([text])
+
+        query_filter: Filter | None = None
+        if since is not None:
+            query_filter = Filter(
+                must=[FieldCondition(key="timestamp", range=Range(gt=since))]
+            )
+
         results = client.query_points(
             collection_name=self._collection_name,
             query=vectors[0],
             limit=top_k,
             with_payload=True,
+            query_filter=query_filter,
         )
 
-        return [
-            Document(
-                content=point.payload.get("content", ""),
-                track_id=point.payload.get("track_id", ""),
-                kind=point.payload.get("kind", ""),
-                timestamp=point.payload.get("timestamp", 0.0),
+        if results.points:
+            score_summary = ", ".join(
+                f"{p.payload.get('track_id', '?')}={p.score:.3f}"
+                for p in results.points[:5]
             )
-            for point in results.points
-        ]
+            logger.info(
+                "Query %r: %d results, scores: [%s]%s",
+                text[:60],
+                len(results.points),
+                score_summary,
+                f" (threshold={score_threshold})" if score_threshold else "",
+            )
+
+        docs: list[Document] = []
+        for point in results.points:
+            if score_threshold is not None and point.score < score_threshold:
+                continue
+            docs.append(
+                Document(
+                    content=point.payload.get("content", ""),
+                    track_id=point.payload.get("track_id", ""),
+                    kind=point.payload.get("kind", ""),
+                    timestamp=point.payload.get("timestamp", 0.0),
+                )
+            )
+        return docs
 
     def close(self) -> None:
         """Release client resources."""

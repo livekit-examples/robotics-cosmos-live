@@ -9,5 +9,5 @@ class InMemoryVectorStore(VectorStore):
     async def insert(self, document: Document) -> None:
         raise NotImplementedError
 
-    async def query(self, text: str, top_k: int = 5) -> list[Document]:
+    async def query(self, text: str, top_k: int = 5, since: float | None = None, score_threshold: float | None = None) -> list[Document]:
         raise NotImplementedError

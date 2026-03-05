@@ -122,19 +122,29 @@ class MilvusVectorStore(VectorStore):
             for r in results
         ]
 
-    async def query(self, text: str, top_k: int = 5) -> list[Document]:
+    async def query(
+        self,
+        text: str,
+        top_k: int = 5,
+        since: float | None = None,
+        score_threshold: float | None = None,
+    ) -> list[Document]:
         """Embed query text, search Milvus Lite, and return matching Documents."""
         client = self._ensure_client()
         vectors = self._embed([text])
+        filter_expr = f"timestamp > {since}" if since is not None else ""
         results = client.search(
             collection_name=self._collection_name,
             data=vectors,
             limit=top_k,
             output_fields=["content", "track_id", "kind", "timestamp"],
+            filter=filter_expr or None,
         )
         documents: list[Document] = []
         for hits in results:
             for hit in hits:
+                if score_threshold is not None and hit.get("distance", 0.0) < score_threshold:
+                    continue
                 entity = hit.get("entity", {})
                 documents.append(
                     Document(

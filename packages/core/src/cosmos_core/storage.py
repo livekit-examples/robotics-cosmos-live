@@ -27,5 +27,17 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
-    async def query(self, text: str, top_k: int = 5) -> list[Document]:
-        """Return the *top_k* most similar documents to *text*."""
+    async def query(
+        self,
+        text: str,
+        top_k: int = 5,
+        since: float | None = None,
+        score_threshold: float | None = None,
+    ) -> list[Document]:
+        """Return the *top_k* most similar documents to *text*.
+
+        Args:
+            since: If provided, only consider documents with timestamp > this value.
+            score_threshold: Minimum similarity score (0–1 for cosine).  Results
+                below this threshold are discarded.  ``None`` means no filtering.
+        """

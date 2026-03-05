@@ -35,21 +35,14 @@ AI agent analyzes available feeds in real-time and selects the most engaging con
 >
 > **System:** The agent semantic-searches the latest vision analyses across all feeds, compares activity levels, and switches to the most active camera.
 
-### Subject Tracking
+### Object Tracking
 
-Multi-camera person tracking that automatically switches feeds to maintain continuous coverage.
+Multi-camera tracking that automatically switches feeds to maintain continuous coverage based on query.
 
-> **User:** "follow person with black shirt through cameras"
+> **User:** "monitor all feeds for a person with hat"
 >
 > **System:** The agent searches for recent vision chunks mentioning a person with matching description across all cameras. When matching person leaves one camera and appears in another, the agent switches feeds to follow.
 
-### Narrative Mode
-
-Intelligent feed sequencing that creates cohesive storylines from multiple cameras.
-
-> **User:** "create a narrative of the office tour"
->
-> **System:** The agent retrieves vision chunks chronologically, identifies a sequence of related events across cameras, and sequences feed switches to assemble a coherent storyline.
 
 ### Security Monitoring
 

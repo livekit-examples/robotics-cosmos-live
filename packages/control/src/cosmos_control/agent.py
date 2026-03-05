@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -28,6 +29,8 @@ class CosmosAgent(Agent):
         super().__init__(instructions=instructions)
         self._vector_store = vector_store
         self._operator = operator
+        self._monitor_task: asyncio.Task[None] | None = None
+        self._monitor_query: str | None = None
 
     # ------------------------------------------------------------------
     # Utility tools
@@ -98,6 +101,119 @@ class CosmosAgent(Agent):
                 f"[{doc.track_id} | {age_mins:.0f}m ago] {doc.content}"
             )
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Feed monitoring tools
+    # ------------------------------------------------------------------
+
+    @function_tool
+    async def monitor_feed(self, ctx: RunContext, query: str) -> str:
+        """Start monitoring all feeds for content matching a semantic query.
+        Runs a background search every 2 seconds and automatically switches
+        the active feed when new matching content is detected.
+
+        If a monitor is already active, it is replaced with the new query.
+
+        Args:
+            query: Natural language description of what to watch for (e.g. "a person waving", "a dog playing").
+        """
+        await self._cancel_monitor()
+        self._monitor_query = query
+        self._monitor_task = asyncio.create_task(self._monitor_loop())
+        return f"Now monitoring feeds for: '{query}'. Will auto-switch when a match is detected."
+
+    @function_tool
+    async def stop_monitoring_feed(self, ctx: RunContext) -> str:
+        """Stop the active feed monitor that was started with monitor_feed."""
+        if self._monitor_task is None:
+            return "No active feed monitor."
+        query = self._monitor_query
+        await self._cancel_monitor()
+        return f"Stopped monitoring for: '{query}'"
+
+    async def _cancel_monitor(self) -> None:
+        if self._monitor_task is not None:
+            self._monitor_task.cancel()
+            await asyncio.gather(self._monitor_task, return_exceptions=True)
+            self._monitor_task = None
+        self._monitor_query = None
+
+    _MONITOR_SCORE_THRESHOLD = 0.26
+
+    async def _monitor_loop(self) -> None:
+        """Background loop: semantic query every 2s, auto-switch on recent hit."""
+        try:
+            while True:
+                await asyncio.sleep(2)
+                if self._monitor_query is None:
+                    break
+
+                now = time.time()
+                since = now - 10
+                docs = await self._vector_store.query(
+                    text=self._monitor_query,
+                    top_k=10,
+                    since=since,
+                    score_threshold=self._MONITOR_SCORE_THRESHOLD,
+                )
+
+                current_feed = (
+                    self._operator.active_feed
+                    if self._operator is not None
+                    else None
+                )
+                candidates = [
+                    d for d in docs if d.track_id != current_feed
+                ] if current_feed else docs
+
+                if docs:
+                    logger.info(
+                        "Monitor query %r: %d results above threshold %.2f "
+                        "(%d on other feeds, active=%r)",
+                        self._monitor_query,
+                        len(docs),
+                        self._MONITOR_SCORE_THRESHOLD,
+                        len(candidates),
+                        current_feed,
+                    )
+                else:
+                    logger.debug(
+                        "Monitor query %r: no results above threshold %.2f",
+                        self._monitor_query,
+                        self._MONITOR_SCORE_THRESHOLD,
+                    )
+
+                if not candidates:
+                    continue
+
+                best = candidates[0]
+                logger.info(
+                    "Monitor hit for %r — switching feed=%s content=%s",
+                    self._monitor_query,
+                    best.track_id,
+                    best.content[:120],
+                )
+
+                if self._operator is not None:
+                    await self._operator.set_feed(best.track_id)
+
+                try:
+                    session = self.session
+                    await session.generate_reply(
+                        instructions=(
+                            f"The feed monitor detected a match for '{self._monitor_query}' "
+                            f"on feed '{best.track_id}'. Matching content: {best.content[:200]}. "
+                            f"The feed has been automatically switched. Briefly inform the user."
+                        )
+                    )
+                except Exception:
+                    logger.debug(
+                        "Could not notify session of monitor hit", exc_info=True
+                    )
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Feed monitor loop error")
 
     # ------------------------------------------------------------------
     # Stream control tools

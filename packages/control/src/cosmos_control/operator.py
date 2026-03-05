@@ -209,6 +209,11 @@ class CVDisplayOperator(StreamOperator):
         """Return participant identities that have at least one subscribed track."""
         return list(self._available_tracks.keys())
 
+    @property
+    def active_feed(self) -> str | None:
+        """Return the identity of the currently active feed, if any."""
+        return self._active_feed
+
     async def start(self) -> None:
         """Connect to LiveKit and start the display loop.
 
