@@ -54,8 +54,12 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
 
+    def _signal_handler() -> None:
+        if not stop.done():
+            stop.set_result(None)
+
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set_result, None)
+        loop.add_signal_handler(sig, _signal_handler)
 
     orchestrator_task = asyncio.create_task(orchestrator.run())
 
@@ -66,8 +70,8 @@ async def main() -> None:
 
     orchestrator_task.cancel()
     try:
-        await orchestrator_task
-    except asyncio.CancelledError:
+        await asyncio.wait_for(orchestrator_task, timeout=5.0)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
         pass
 
     await vision.close()
@@ -76,4 +80,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

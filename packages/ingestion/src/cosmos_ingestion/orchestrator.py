@@ -100,8 +100,7 @@ class Orchestrator:
             logger.info("Shutting down orchestrator...")
             for task in self._tasks.values():
                 task.cancel()
-            for worker in self._video_workers.values():
-                await worker.stop()
+            await asyncio.gather(*self._tasks.values(), return_exceptions=True)
             await room.disconnect()
             logger.info("Disconnected")
 
@@ -127,16 +126,21 @@ class Orchestrator:
         video_stream = rtc.VideoStream(track)
         last_frame_time = 0.0
 
-        async for frame_event in video_stream:
-            now = time.monotonic()
-            if now - last_frame_time < self._frame_interval:
-                continue
-            last_frame_time = now
+        try:
+            async for frame_event in video_stream:
+                now = time.monotonic()
+                if now - last_frame_time < self._frame_interval:
+                    continue
+                last_frame_time = now
 
-            frame = frame_event.frame
-            rgb_frame = frame.convert(rtc.VideoBufferType.RGB24)
-            arr = np.frombuffer(rgb_frame.data, dtype=np.uint8).reshape(
-                (rgb_frame.height, rgb_frame.width, 3)
-            )
-            
-            worker.push_frame(arr, time.time())
+                frame = frame_event.frame
+                rgb_frame = frame.convert(rtc.VideoBufferType.RGB24)
+                arr = np.frombuffer(rgb_frame.data, dtype=np.uint8).reshape(
+                    (rgb_frame.height, rgb_frame.width, 3)
+                )
+
+                worker.push_frame(arr, time.time())
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await video_stream.aclose()
