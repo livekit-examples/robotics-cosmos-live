@@ -4,7 +4,7 @@
 
 # cosmos-live
 
-An intelligent video feed management system that orchestrates multiple live camera streams to enable both manual voice control and AI-driven stream monitoring and querying.  The video streaming frontend uses LiveKit to publish streams into a room, LiveKit Agents for voice control, and Cosmos Reason 2 on Nebius for video understanding.
+An intelligent video feed management system that orchestrates multiple live camera streams to enable both manual voice control and AI-driven stream monitoring and querying.  The video streaming frontend uses LiveKit to publish streams into a room, LiveKit Agents for voice control, and Cosmos Reason 2 on Nebius for video understanding.  It has the ability search for when events happened in the past & to automatically switch to streams based on a query.
 
 ## Table of Contents
 
@@ -75,7 +75,7 @@ Cameras ──► LiveKit ──► Orchestrator         User (voice)
                 │            │            │      │        │
            FrameBuffer  FrameBuffer     STT  queries  commands
                 │            │            │      │        │
-           VisionModel  VisionModel      │      │        ▼
+           VisionModel  VisionModel       │      │        ▼
                 │            │            │      │   StreamOperator
                 └────────────┴────────────┘      │        │
                              │                   │        ▼
@@ -122,6 +122,8 @@ The **CosmosAgent** has access to these tools:
 | `set_overlay(slot, text)`              | Place a text overlay on the stream (`lower_third`, `title`, `banner`)  |
 | `clear_overlay(slot)`                  | Remove an overlay                                                      |
 | `start_stream()` / `stop_stream()`     | Start or stop the stream operator                                      |
+| `monitor_feed(query)`                  | Start monitoring the feed for anything and automatically switch        |
+| `stop_monitoring_feed()`               | Stops monitoring feeds for any queries                                 |
 
 When the agent calls `switch_feed` or `set_overlay`, the **StreamOperator** composites the selected video feed with overlays and serves it as an MJPEG stream over HTTP.
 
