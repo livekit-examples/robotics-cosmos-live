@@ -138,13 +138,13 @@ class CosmosAgent(Agent):
             self._monitor_task = None
         self._monitor_query = None
 
-    _MONITOR_SCORE_THRESHOLD = 0.26
+    _MONITOR_SCORE_THRESHOLD = 0.25
 
     async def _monitor_loop(self) -> None:
-        """Background loop: semantic query every 2s, auto-switch on recent hit."""
+        """Background loop: semantic query every 1s, auto-switch on recent hit."""
         try:
             while True:
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
                 if self._monitor_query is None:
                     break
 
@@ -186,11 +186,12 @@ class CosmosAgent(Agent):
                 if not candidates:
                     continue
 
-                best = candidates[0]
+                best = max(candidates, key=lambda d: d.score)
                 logger.info(
-                    "Monitor hit for %r — switching feed=%s content=%s",
+                    "Monitor hit for %r — switching feed=%s score=%.3f content=%s",
                     self._monitor_query,
                     best.track_id,
+                    best.score,
                     best.content[:120],
                 )
 
@@ -199,13 +200,15 @@ class CosmosAgent(Agent):
 
                 try:
                     session = self.session
-                    await session.generate_reply(
-                        instructions=(
-                            f"The feed monitor detected a match for '{self._monitor_query}' "
-                            f"on feed '{best.track_id}'. Matching content: {best.content[:200]}. "
-                            f"The feed has been automatically switched. Briefly inform the user."
-                        )
-                    )
+                    await session.say(f"Switching to {best.track_id}")
+                    # session = self.session
+                    # await session.generate_reply(
+                    #     instructions=(
+                    #         f"The feed monitor detected a match for '{self._monitor_query}' "
+                    #         f"on feed '{best.track_id}'. Matching content: {best.content[:200]}. "
+                    #         f"The feed has been automatically switched. Briefly inform the user."
+                    #     )
+                    # )
                 except Exception:
                     logger.debug(
                         "Could not notify session of monitor hit", exc_info=True

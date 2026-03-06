@@ -30,6 +30,7 @@ class Document:
     track_id: str = ""
     kind: str = ""  # e.g. "video", "audio"
     timestamp: float = 0.0
+    score: float = 0.0
     embedding: list[float] | None = None
 
 

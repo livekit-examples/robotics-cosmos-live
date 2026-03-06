@@ -307,6 +307,7 @@ class CVDisplayOperator(StreamOperator):
                 self._consume_video_task = asyncio.create_task(
                     self._consume_video(track_info.video)
                 )
+                
             else:
                 logger.warning(
                     "Feed %s not found in available tracks; "

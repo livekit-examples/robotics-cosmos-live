@@ -194,6 +194,7 @@ class QdrantVectorStore(VectorStore):
                     track_id=point.payload.get("track_id", ""),
                     kind=point.payload.get("kind", ""),
                     timestamp=point.payload.get("timestamp", 0.0),
+                    score=point.score,
                 )
             )
         return docs
