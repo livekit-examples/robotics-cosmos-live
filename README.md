@@ -1,3 +1,6 @@
+> [!WARNING]
+> This example is archived and no longer maintained. For current examples, see [LiveKit Agents examples](https://github.com/livekit/agents/tree/main/examples).
+
 <a href="https://livekit.io/">
   <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
 </a>
